@@ -1,0 +1,174 @@
+"""
+file_parser.py
+
+Handles parsing of .npy filenames into structured metadata.
+"""
+
+import os
+import re
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+VALID_MODALITIES = {"MMG", "IMU"}
+
+VALID_CLASSES = {
+    "sit", "stand", "walk",
+    "sit-to-stand", "stand-to-sit",
+    "stair-ascent", "stair-descent"
+}
+
+TRANSITION_CLASSES = {"sit-to-stand", "stand-to-sit", "stair-ascent", "stair-descent"}
+
+STEADY_STATE_CLASSES = {"sit", "stand", "walk"}
+
+VALID_TRANSITION_POINTS = {
+    "pre_transition",
+    "transition_start",
+    "transition_end",
+    "post_transition"
+}
+
+# ---------------------------------------------------------------------------
+# Dataclass — structured metadata container
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FileMetadata:
+    """Structured container for all metadata extracted from a .npy filename."""
+
+    file_path: str
+    volunteer_id: str                          # e.g. "N001"
+    modality: str                              # "MMG" or "IMU"
+    activity_class: str                        # e.g. "sit", "walk"
+    is_transition_class: bool                  # True if sit-to-stand, etc.
+    transition_point: Optional[str] = None     # e.g. "pre_transition"
+    has_transition_info: bool = field(init=False)
+
+    def __post_init__(self):
+        self.has_transition_info = self.transition_point is not None
+
+
+# ---------------------------------------------------------------------------
+# Parser Class
+# ---------------------------------------------------------------------------
+
+class FileNameParser:
+    """
+    Parses .npy filenames into structured FileMetadata objects.
+
+    Expected filename formats:
+        <prefix>_<volunteer_id>_<modality>_<class>.npy
+        <prefix>_<volunteer_id>_<modality>_<class>_<transition_point>.npy
+
+    Examples:
+        trial01_N001_MMG_sit.npy
+        trial01_N001_IMU_sit-to-stand_pre_transition.npy
+    """
+
+    # Regex: captures volunteer ID (N0XX), modality, class, and optional
+    # transition point from the filename stem
+    _PATTERN = re.compile(
+        r".*?(N0\d+)"                          # volunteer ID
+        r"_(MMG|IMU)"                          # modality
+        r"_([\w-]+?)"                          # activity class
+        r"(?:_([\w]+(?:_[\w]+)*))?"            # optional transition point
+        r"$",
+        re.IGNORECASE
+    )
+
+    def parse(self, file_path: str) -> FileMetadata:
+        """
+        Parse a single file path into a FileMetadata object.
+
+        Parameters
+        ----------
+        file_path : str
+            Full or relative path to the .npy file.
+
+        Returns
+        -------
+        FileMetadata
+            Populated metadata object.
+
+        Raises
+        ------
+        ValueError
+            If the filename does not match the expected pattern or contains
+            unrecognised modality / class values.
+        """
+        stem = os.path.splitext(os.path.basename(file_path))[0]
+        match = self._PATTERN.match(stem)
+
+        if not match:
+            raise ValueError(
+                f"Filename '{stem}' does not match the expected naming convention."
+            )
+
+        volunteer_id = match.group(1).upper()
+        modality = match.group(2).upper()
+        activity_class = match.group(3).lower()
+        transition_point_raw = match.group(4)
+
+        self._validate_modality(modality, stem)
+        self._validate_class(activity_class, stem)
+
+        transition_point = self._resolve_transition_point(
+            transition_point_raw, activity_class, stem
+        )
+
+        return FileMetadata(
+            file_path=file_path,
+            volunteer_id=volunteer_id,
+            modality=modality,
+            activity_class=activity_class,
+            is_transition_class=activity_class in TRANSITION_CLASSES,
+            transition_point=transition_point,
+        )
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_modality(modality: str, stem: str) -> None:
+        if modality not in VALID_MODALITIES:
+            raise ValueError(
+                f"Unrecognised modality '{modality}' in file '{stem}'. "
+                f"Expected one of {VALID_MODALITIES}."
+            )
+
+    @staticmethod
+    def _validate_class(activity_class: str, stem: str) -> None:
+        if activity_class not in VALID_CLASSES:
+            raise ValueError(
+                f"Unrecognised activity class '{activity_class}' in file "
+                f"'{stem}'. Expected one of {VALID_CLASSES}."
+            )
+
+    @staticmethod
+    def _resolve_transition_point(
+        raw: Optional[str],
+        activity_class: str,
+        stem: str
+    ) -> Optional[str]:
+        """
+        Validate and return the transition point string if present.
+        Only transition-class files should carry transition point info.
+        """
+        if raw is None:
+            return None
+
+        normalised = raw.lower()
+
+        if normalised not in VALID_TRANSITION_POINTS:
+            raise ValueError(
+                f"Unrecognised transition point '{raw}' in file '{stem}'. "
+                f"Expected one of {VALID_TRANSITION_POINTS}."
+            )
+
+        return normalised

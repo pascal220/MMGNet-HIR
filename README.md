@@ -239,7 +239,7 @@ Five deep learning architectures are implemented and benchmarked:
 ## ⚙️ Installation
 
 ### Prerequisites
-- Python >= 3.9
+- Python >= 3.11
 - CUDA-compatible GPU (recommended)
 
 ### Setup
