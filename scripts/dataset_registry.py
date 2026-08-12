@@ -5,6 +5,7 @@ Now supports building separate registries per folder and exposes
 a unified dual-folder build method.
 """
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional, Union
@@ -12,6 +13,8 @@ from typing import Optional, Union
 import pandas as pd
 
 from file_parser import FileMetadata, FileNameParser
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -96,24 +99,33 @@ class DatasetRegistry:
         pd.DataFrame
             Registry for this folder.
         """
+        logger.info(f"Building registry for {folder_tag} from {directory}")
         directory = Path(directory)
 
         if not directory.exists():
+            logger.error(f"Directory not found: {directory}")
             raise FileNotFoundError(f"Directory not found: {directory}")
 
+        logger.debug(f"Scanning directory recursively for .npy files")
         records = []
+        file_count = 0
 
         for file_path in sorted(directory.rglob("*.npy")):
+            file_count += 1
             record = self._process_file(file_path, load_shapes, folder_tag)
             if record is not None:
                 records.append(record)
+            if file_count % 100 == 0:
+                logger.debug(f"Processed {file_count} files from {folder_tag}")
 
+        logger.info(f"Found {file_count} .npy files in {folder_tag}")
         df = pd.DataFrame(records)
         df = self._cast_dtypes(df)
 
-        print(
-            f"[DatasetRegistry] '{folder_tag}' | {len(df)} files | "
-            f"{df[RegistryColumns.VOLUNTEER_ID].nunique()} volunteers"
+        volunteer_count = df[RegistryColumns.VOLUNTEER_ID].nunique()
+        logger.info(
+            f"Registry '{folder_tag}' complete: {len(df)} files | "
+            f"{volunteer_count} volunteers"
         )
 
         return df
@@ -144,29 +156,43 @@ class DatasetRegistry:
         df_folder_1 : pd.DataFrame
         df_folder_2 : pd.DataFrame
         """
+        logger.info("Building dual-folder registries")
+        logger.debug(f"Folder 1: {folder_1}")
+        logger.debug(f"Folder 2: {folder_2}")
+        
         df_1 = self.build_from_folder(folder_1, folder_tag="folder_1",
                                        load_shapes=load_shapes)
         df_2 = self.build_from_folder(folder_2, folder_tag="folder_2",
                                        load_shapes=load_shapes)
 
         self._df = pd.concat([df_1, df_2], ignore_index=True)
+        logger.info(f"Dual-folder registries complete: {len(df_1)} + {len(df_2)} files")
 
         return df_1, df_2
 
     def filter_by_modality(self, df: pd.DataFrame, modality: str) -> pd.DataFrame:
-        return df[
+        logger.debug(f"Filtering {len(df)} samples by modality '{modality}'")
+        filtered = df[
             df[RegistryColumns.MODALITY] == modality.upper()
         ].reset_index(drop=True)
+        logger.debug(f"Filtered result: {len(filtered)} samples")
+        return filtered
 
     def filter_by_volunteer(self, df: pd.DataFrame, volunteer_id: str) -> pd.DataFrame:
-        return df[
+        logger.debug(f"Filtering {len(df)} samples by volunteer '{volunteer_id}'")
+        filtered = df[
             df[RegistryColumns.VOLUNTEER_ID] == volunteer_id.upper()
         ].reset_index(drop=True)
+        logger.debug(f"Filtered result: {len(filtered)} samples")
+        return filtered
 
     def get_transition_samples(self, df: pd.DataFrame) -> pd.DataFrame:
-        return df[
+        logger.debug(f"Extracting transition samples from {len(df)} samples")
+        filtered = df[
             df[RegistryColumns.HAS_TRANSITION_INFO]
         ].reset_index(drop=True)
+        logger.debug(f"Found {len(filtered)} transition samples")
+        return filtered
 
     def summary(self, df: pd.DataFrame) -> pd.DataFrame:
         cols = [
@@ -192,17 +218,19 @@ class DatasetRegistry:
     ) -> Optional[dict]:
         try:
             metadata: FileMetadata = self._parser.parse(str(file_path))
+            logger.debug(f"Parsed {file_path.name}: {metadata.volunteer_id} {metadata.modality} {metadata.activity_class}")
             record = self._metadata_to_record(metadata, folder_tag)
 
             if load_shapes:
                 shape = self._load_shape(file_path)
                 if shape is not None:
                     record.update(self._shape_to_record(shape))
+                    logger.debug(f"Shape loaded for {file_path.name}: {shape}")
 
             return record
 
         except ValueError as exc:
-            print(f"[DatasetRegistry] Skipping '{file_path.name}': {exc}")
+            logger.warning(f"Skipping '{file_path.name}': {exc}")
             return None
 
     @staticmethod

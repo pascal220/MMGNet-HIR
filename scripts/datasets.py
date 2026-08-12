@@ -5,6 +5,7 @@ PyTorch Dataset classes updated to use the LRUArrayCache for
 memory-efficient data loading.
 """
 
+import logging
 import numpy as np
 import pandas as pd
 import torch
@@ -14,6 +15,8 @@ from typing import Optional, Callable
 
 from dataset_registry import RegistryColumns, LABEL_TO_CLASS
 from memory_manager import LRUArrayCache
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -40,9 +43,11 @@ class BaseActivityDataset(Dataset):
         cache: LRUArrayCache,
         transform: Optional[Callable] = None,
     ):
+        logger.debug(f"Initializing {self.__class__.__name__} with {len(registry_df)} samples")
         self._df = registry_df.reset_index(drop=True)
         self._cache = cache
         self._transform = transform
+        logger.debug(f"{self.__class__.__name__} initialized successfully")
 
     def __len__(self) -> int:
         return len(self._df)
@@ -74,6 +79,7 @@ class BaseActivityDataset(Dataset):
 
     def _load_array(self, file_path: str) -> np.ndarray:
         """Load an array via the shared LRU cache."""
+        logger.debug(f"Loading array from cache: {file_path}")
         return self._cache.get(file_path)
 
     @staticmethod
@@ -86,12 +92,19 @@ class BaseActivityDataset(Dataset):
 
     def _prepare_tensor(self, file_path: str) -> Tensor:
         """Load, transpose, and squeeze/aggregate the sample dimension."""
+        logger.debug(f"Preparing tensor from {file_path}")
         array = self._load_array(file_path)
+        logger.debug(f"Array shape: {array.shape}")
         tensor = self._to_tensor(array)          # (samples, C, W, H)
+        logger.debug(f"Tensor shape after transpose: {tensor.shape}")
 
         if tensor.shape[0] == 1:
-            return tensor.squeeze(0)             # (C, W, H)
-        return tensor.mean(dim=0)                # (C, W, H)
+            result = tensor.squeeze(0)             # (C, W, H)
+            logger.debug(f"Squeezed tensor shape: {result.shape}")
+            return result
+        result = tensor.mean(dim=0)                # (C, W, H)
+        logger.debug(f"Aggregated tensor shape: {result.shape}")
+        return result
 
     def _apply_transform(self, tensor: Tensor) -> Tensor:
         if self._transform is not None:
@@ -117,7 +130,18 @@ class SingleModalityDataset(BaseActivityDataset):
         Optional transform applied to the data tensor.
     """
 
+    def __init__(
+        self,
+        registry_df: pd.DataFrame,
+        cache: LRUArrayCache,
+        transform: Optional[Callable] = None,
+    ):
+        logger.debug(f"Initializing SingleModalityDataset with {len(registry_df)} samples")
+        super().__init__(registry_df, cache, transform)
+        logger.info(f"SingleModalityDataset created: {len(self)} samples")
+
     def __getitem__(self, index: int) -> tuple[Tensor, Tensor]:
+        logger.debug(f"Getting item {index}")
         row = self._df.iloc[index]
 
         tensor = self._prepare_tensor(row[RegistryColumns.FILE_PATH])
@@ -162,7 +186,11 @@ class FusedModalityDataset(BaseActivityDataset):
         fusion_strategy: str = "early",
         transform: Optional[Callable] = None,
     ):
+        logger.debug(f"Initializing FusedModalityDataset with strategy='{fusion_strategy}'")
+        logger.debug(f"MMG samples: {len(mmg_registry)}, IMU samples: {len(imu_registry)}")
+        
         if fusion_strategy not in self._VALID_STRATEGIES:
+            logger.error(f"Invalid fusion_strategy: {fusion_strategy}")
             raise ValueError(
                 f"fusion_strategy must be one of {self._VALID_STRATEGIES}, "
                 f"got '{fusion_strategy}'."
@@ -170,8 +198,10 @@ class FusedModalityDataset(BaseActivityDataset):
 
         self._fusion_strategy = fusion_strategy
         self._mmg_df, self._imu_df = self._align_pairs(mmg_registry, imu_registry)
+        logger.info(f"Aligned {len(self._mmg_df)} MMG-IMU pairs")
 
         super().__init__(self._mmg_df, cache, transform)
+        logger.info(f"FusedModalityDataset created: {len(self)} samples, strategy={fusion_strategy}")
 
     def __len__(self) -> int:
         return len(self._mmg_df)

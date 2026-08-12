@@ -4,10 +4,13 @@ file_parser.py
 Handles parsing of .npy filenames into structured metadata.
 """
 
+import logging
 import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -101,10 +104,13 @@ class FileNameParser:
             If the filename does not match the expected pattern or contains
             unrecognised modality / class values.
         """
+        logger.debug(f"Parsing file: {file_path}")
         stem = os.path.splitext(os.path.basename(file_path))[0]
+        logger.debug(f"Filename stem: {stem}")
         match = self._PATTERN.match(stem)
 
         if not match:
+            logger.error(f"Filename does not match expected pattern: {stem}")
             raise ValueError(
                 f"Filename '{stem}' does not match the expected naming convention."
             )
@@ -114,14 +120,17 @@ class FileNameParser:
         activity_class = match.group(3).lower()
         transition_point_raw = match.group(4)
 
+        logger.debug(f"Extracted: volunteer={volunteer_id}, modality={modality}, class={activity_class}, transition={transition_point_raw}")
+
         self._validate_modality(modality, stem)
         self._validate_class(activity_class, stem)
 
         transition_point = self._resolve_transition_point(
             transition_point_raw, activity_class, stem
         )
+        logger.debug(f"Resolved transition point: {transition_point}")
 
-        return FileMetadata(
+        metadata = FileMetadata(
             file_path=file_path,
             volunteer_id=volunteer_id,
             modality=modality,
@@ -129,6 +138,8 @@ class FileNameParser:
             is_transition_class=activity_class in TRANSITION_CLASSES,
             transition_point=transition_point,
         )
+        logger.debug(f"FileMetadata created successfully")
+        return metadata
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -136,19 +147,25 @@ class FileNameParser:
 
     @staticmethod
     def _validate_modality(modality: str, stem: str) -> None:
+        logger.debug(f"Validating modality: {modality}")
         if modality not in VALID_MODALITIES:
+            logger.error(f"Invalid modality '{modality}' in file '{stem}'")
             raise ValueError(
                 f"Unrecognised modality '{modality}' in file '{stem}'. "
                 f"Expected one of {VALID_MODALITIES}."
             )
+        logger.debug(f"Modality '{modality}' is valid")
 
     @staticmethod
     def _validate_class(activity_class: str, stem: str) -> None:
+        logger.debug(f"Validating activity class: {activity_class}")
         if activity_class not in VALID_CLASSES:
+            logger.error(f"Invalid activity class '{activity_class}' in file '{stem}'")
             raise ValueError(
                 f"Unrecognised activity class '{activity_class}' in file "
                 f"'{stem}'. Expected one of {VALID_CLASSES}."
             )
+        logger.debug(f"Activity class '{activity_class}' is valid")
 
     @staticmethod
     def _resolve_transition_point(
@@ -161,14 +178,18 @@ class FileNameParser:
         Only transition-class files should carry transition point info.
         """
         if raw is None:
+            logger.debug("No transition point provided")
             return None
 
         normalised = raw.lower()
+        logger.debug(f"Validating transition point: {normalised}")
 
         if normalised not in VALID_TRANSITION_POINTS:
+            logger.error(f"Invalid transition point '{raw}' in file '{stem}'")
             raise ValueError(
                 f"Unrecognised transition point '{raw}' in file '{stem}'. "
                 f"Expected one of {VALID_TRANSITION_POINTS}."
             )
 
+        logger.debug(f"Transition point '{normalised}' is valid")
         return normalised

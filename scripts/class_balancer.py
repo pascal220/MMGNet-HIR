@@ -7,6 +7,7 @@ Balancing is performed across what is available in each folder
 independently, then combined.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -14,6 +15,8 @@ import numpy as np
 import pandas as pd
 
 from dataset_registry import RegistryColumns
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -108,11 +111,15 @@ class ClassBalancer:
         BalanceStats
             Per-class counts, weights, and target count.
         """
+        logger.debug(f"Computing balance stats for {len(df)} samples")
         counts = df[RegistryColumns.CLASS_LABEL].value_counts().sort_index()
         target = int(counts.min())
+        logger.debug(f"Class counts: {dict(counts)}")
+        logger.debug(f"Minimum class count (target): {target}")
 
         # Inverse frequency weights — minority class gets weight 1.0
         weights = target / counts
+        logger.debug(f"Computed inverse frequency weights")
 
         return BalanceStats(
             class_counts=counts,
@@ -142,12 +149,17 @@ class ClassBalancer:
             Balanced DataFrame (for 'undersample') or original DataFrame
             with an added 'sample_weight' column (for 'weighted').
         """
+        logger.info(f"Balancing DataFrame with strategy='{self._strategy}'")
+        logger.debug(f"Input DataFrame: {len(df)} samples")
         stats = self.compute_stats(df)
         n = target_count or stats.target_count
+        logger.info(f"Target samples per class: {n}")
 
         if self._strategy == "undersample":
+            logger.debug("Applying undersampling strategy")
             return self._undersample(df, n)
 
+        logger.debug("Applying weighted strategy")
         return self._attach_weights(df, stats)
 
     def balance_to_available(
@@ -180,21 +192,29 @@ class ClassBalancer:
         balanced_primary : pd.DataFrame
         balanced_secondary : pd.DataFrame
         """
+        logger.info("="*60)
+        logger.info("Starting balance_to_available")
+        logger.info(f"Primary folder (1): {len(primary_df)} samples")
+        logger.info(f"Secondary folder (2): {len(secondary_df)} samples")
+        logger.info(f"Secondary memory budget: {secondary_budget_bytes / (1024**3):.2f} GB")
+        
         # Step 1 — balance primary independently
+        logger.info("Step 1: Balancing primary folder")
         balanced_primary = self.balance(primary_df)
         primary_stats = self.compute_stats(balanced_primary)
-
-        print(primary_stats.summary())
+        logger.info(f"Primary balanced to {len(balanced_primary)} samples")
+        logger.debug(primary_stats.summary())
 
         # Step 2 — fill secondary up to budget, stratified by class
+        logger.info("Step 2: Filling secondary folder up to budget")
         filled_secondary = self._fill_secondary_by_budget(
             secondary_df, secondary_budget_bytes
         )
+        logger.info(f"Secondary filled to {len(filled_secondary)} samples")
 
         if filled_secondary.empty:
-            print(
-                "[ClassBalancer] No secondary data fits within the "
-                "remaining memory budget."
+            logger.warning(
+                "No secondary data fits within the remaining memory budget."
             )
             return balanced_primary, filled_secondary
 
@@ -239,10 +259,13 @@ class ClassBalancer:
         np.ndarray
             Array of shape (len(df),) with per-sample weights.
         """
+        logger.debug(f"Computing sample weights for {len(df)} samples")
         stats = self.compute_stats(df)
-        return df[RegistryColumns.CLASS_LABEL].map(stats.weights).to_numpy(
+        weights = df[RegistryColumns.CLASS_LABEL].map(stats.weights).to_numpy(
             dtype=np.float32
         )
+        logger.debug(f"Sample weights computed: min={weights.min():.4f}, max={weights.max():.4f}, mean={weights.mean():.4f}")
+        return weights
 
     # ------------------------------------------------------------------
     # Private helpers

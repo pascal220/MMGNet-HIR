@@ -7,12 +7,14 @@ The core is selected to be proportionally representative across
 volunteers, modalities, and activity classes.
 """
 
+import logging
 from typing import Optional
 
 import pandas as pd
 
 from dataset_registry import RegistryColumns
 
+logger = logging.getLogger(__name__)
 
 BYTES_PER_GB = 1024 ** 3
 
@@ -40,10 +42,13 @@ class CoreDataSelector:
         registry_df: pd.DataFrame,
         core_size_gb: float = 9.2,
     ):
+        logger.info(f"Initializing CoreDataSelector with core_size_gb={core_size_gb}")
+        logger.debug(f"Registry size: {len(registry_df)} files")
         self._df = registry_df.copy()
         self._core_size_bytes = int(core_size_gb * BYTES_PER_GB)
         self._core_df: Optional[pd.DataFrame] = None
         self._dynamic_df: Optional[pd.DataFrame] = None
+        logger.debug(f"Core size target: {core_size_gb:.2f} GB ({self._core_size_bytes} bytes)")
 
     # ------------------------------------------------------------------
     # Public API
@@ -60,8 +65,10 @@ class CoreDataSelector:
         dynamic_df : pd.DataFrame
             Remaining files loaded on demand via LRU cache.
         """
+        logger.info("Starting core/dynamic selection")
         self._validate_size_column()
 
+        logger.debug("Selecting core files via stratified fill")
         core_rows = self._stratified_fill(self._core_size_bytes)
 
         core_indices = set(core_rows.index)
@@ -73,18 +80,14 @@ class CoreDataSelector:
         actual_core_gb = (
             self._core_df["file_size_bytes"].sum() / BYTES_PER_GB
         )
+        dynamic_gb = (
+            self._dynamic_df["file_size_bytes"].sum() / BYTES_PER_GB
+        )
 
-        print(
-            f"[CoreDataSelector] Core : {len(self._core_df)} files | "
-            f"{actual_core_gb:.2f} GB"
-        )
-        print(
-            f"[CoreDataSelector] Dynamic: {len(self._dynamic_df)} files | "
-            f"{self._dynamic_df['file_size_bytes'].sum() / BYTES_PER_GB:.2f} GB"
-        )
-        print(
-            f"[CoreDataSelector] Dynamic load ratio: "
-            f"{self.dynamic_load_ratio:.4f} "
+        logger.info(f"Core : {len(self._core_df)} files | {actual_core_gb:.2f} GB")
+        logger.info(f"Dynamic: {len(self._dynamic_df)} files | {dynamic_gb:.2f} GB")
+        logger.info(
+            f"Dynamic load ratio: {self.dynamic_load_ratio:.4f} "
             f"(~{self.dynamic_files_per_core_example:.1f} dynamic files "
             f"per core example)"
         )
@@ -145,9 +148,11 @@ class CoreDataSelector:
         pd.DataFrame
             Sampled dynamic files for one epoch.
         """
+        logger.debug(f"Sampling dynamic files for epoch with random_state={random_state}")
         self._assert_selected()
 
         n_sample = min(len(self._core_df), len(self._dynamic_df))
+        logger.debug(f"Sampling {n_sample} dynamic files")
 
         if n_sample == 0:
             return self._dynamic_df.copy()
@@ -170,6 +175,7 @@ class CoreDataSelector:
         Files are sorted within each stratum by size (ascending) to
         maximise the number of files that fit within the budget.
         """
+        logger.debug(f"Starting stratified fill with budget {budget_bytes / BYTES_PER_GB:.2f} GB")
         strata_cols = [
             RegistryColumns.VOLUNTEER_ID,
             RegistryColumns.MODALITY,
@@ -177,6 +183,7 @@ class CoreDataSelector:
         ]
 
         groups = self._df.groupby(strata_cols, group_keys=False)
+        logger.debug(f"Number of strata: {len(groups)}")
 
         # Interleave one file per stratum per round until budget is full
         stratum_iters = {
@@ -203,6 +210,7 @@ class CoreDataSelector:
                 except StopIteration:
                     exhausted.add(key)
 
+        logger.debug(f"Selected {len(selected_indices)} files, total size: {accumulated_bytes / BYTES_PER_GB:.2f} GB")
         return self._df.loc[selected_indices]
 
     def _validate_size_column(self) -> None:
@@ -210,7 +218,9 @@ class CoreDataSelector:
         Ensure 'file_size_bytes' column exists. If not, compute it
         from the shape columns (width × height × channels × samples × 4 bytes).
         """
+        logger.debug("Validating size column")
         if "file_size_bytes" in self._df.columns:
+            logger.debug("file_size_bytes column already exists")
             return
 
         required = [
@@ -221,6 +231,7 @@ class CoreDataSelector:
         ]
 
         if all(col in self._df.columns for col in required):
+            logger.debug("Computing file_size_bytes from shape columns")
             self._df["file_size_bytes"] = (
                 self._df[RegistryColumns.WIDTH]
                 * self._df[RegistryColumns.HEIGHT]
@@ -228,13 +239,17 @@ class CoreDataSelector:
                 * self._df[RegistryColumns.SAMPLES]
                 * 4  # float32 = 4 bytes
             )
+            logger.debug(f"Computed sizes, range: {self._df['file_size_bytes'].min() / (1024**2):.2f} - {self._df['file_size_bytes'].max() / (1024**2):.2f} MB")
         else:
             # Fall back to reading file sizes from disk
+            logger.debug("Computing file_size_bytes from disk")
             import os
             self._df["file_size_bytes"] = self._df[
                 RegistryColumns.FILE_PATH
             ].apply(os.path.getsize)
+            logger.debug(f"File sizes read from disk")
 
     def _assert_selected(self) -> None:
         if self._core_df is None:
+            logger.error("select() was not called before accessing core/dynamic splits")
             raise RuntimeError("Call select() before accessing core/dynamic splits.")
