@@ -85,9 +85,19 @@ class BaseActivityDataset(Dataset):
     @staticmethod
     def _to_tensor(array: np.ndarray) -> Tensor:
         """
-        (width, height, channels, samples) → (samples, channels, width, height)
+        Raw arrays are stored as (samples, ..., height, width). Any axes
+        between the leading sample axis and the trailing two spatial axes
+        (e.g. MMG's extra wavelet-scale axis) are folded into a single
+        channel axis, giving (samples, channels, height, width).
         """
-        array = np.transpose(array, (3, 2, 0, 1)).astype(np.float32)
+        array = array.astype(np.float32)
+        if array.ndim < 3:
+            raise ValueError(
+                f"Expected array with at least 3 dimensions, got shape {array.shape}"
+            )
+        if array.ndim > 4:
+            samples, height, width = array.shape[0], array.shape[-2], array.shape[-1]
+            array = array.reshape(samples, -1, height, width)
         return torch.from_numpy(array)
 
     def _prepare_tensor(self, file_path: str) -> Tensor:

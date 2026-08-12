@@ -41,11 +41,11 @@ class RegistryColumns:
 CLASS_TO_LABEL: dict[str, int] = {
     "sit": 0,
     "stand": 1,
-    "walk": 2,
-    "sit-to-stand": 3,
-    "stand-to-sit": 4,
-    "stair-ascent": 5,
-    "stair-descent": 6,
+    "walking": 2,
+    "sit_to_stand": 3,
+    "stand_to_sit": 4,
+    "stair_up": 5,
+    "stair_down": 6,
 }
 
 LABEL_TO_CLASS: dict[int, str] = {v: k for k, v in CLASS_TO_LABEL.items()}
@@ -121,6 +121,7 @@ class DatasetRegistry:
         logger.info(f"Found {file_count} .npy files in {folder_tag}")
         df = pd.DataFrame(records)
         df = self._cast_dtypes(df)
+        df = self._add_file_size_column(df)
 
         volunteer_count = df[RegistryColumns.VOLUNTEER_ID].nunique()
         logger.info(
@@ -261,9 +262,18 @@ class DatasetRegistry:
 
     @staticmethod
     def _shape_to_record(shape: tuple) -> dict:
-        if len(shape) != 4:
+        """
+        Shapes are (samples, ..., height, width); any axes between the
+        leading sample axis and the trailing two spatial axes are folded
+        into a single channel count (see datasets.py:_to_tensor).
+        """
+        if len(shape) < 3:
             return {}
-        width, height, channels, samples = shape
+        samples = shape[0]
+        height, width = shape[-2], shape[-1]
+        channels = 1
+        for dim in shape[1:-2]:
+            channels *= dim
         return {
             RegistryColumns.WIDTH: width,
             RegistryColumns.HEIGHT: height,
@@ -285,4 +295,29 @@ class DatasetRegistry:
                 df[column] = df[column].astype(dtype)
         if col.IS_1D in df.columns:
             df[col.IS_1D] = df[col.IS_1D].astype("bool")
+        return df
+
+    @staticmethod
+    def _add_file_size_column(df: pd.DataFrame) -> pd.DataFrame:
+        """Add 'file_size_bytes', from shape columns if available, else from disk."""
+        if df.empty:
+            df["file_size_bytes"] = pd.Series(dtype="int64")
+            return df
+
+        shape_cols = [
+            RegistryColumns.WIDTH,
+            RegistryColumns.HEIGHT,
+            RegistryColumns.CHANNELS,
+            RegistryColumns.SAMPLES,
+        ]
+        if all(c in df.columns for c in shape_cols):
+            df["file_size_bytes"] = (
+                df[RegistryColumns.WIDTH]
+                * df[RegistryColumns.HEIGHT]
+                * df[RegistryColumns.CHANNELS]
+                * df[RegistryColumns.SAMPLES]
+                * 4  # float32
+            )
+        else:
+            df["file_size_bytes"] = df[RegistryColumns.FILE_PATH].apply(os.path.getsize)
         return df

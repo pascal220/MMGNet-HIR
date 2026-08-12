@@ -4,8 +4,13 @@ Full dual-folder workflow with class balancing and memory-aware loading.
 """
 
 import logging
+import sys
+from pathlib import Path
+
 import pandas as pd
 from torch.utils.data import DataLoader, WeightedRandomSampler
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
 from dataset_registry import DatasetRegistry, RegistryColumns
 from class_balancer import ClassBalancer
@@ -139,7 +144,7 @@ def main():
             mmg_dataset,
             batch_size=32,
             sampler=sampler,
-            num_workers=4,
+            num_workers=0,
             pin_memory=True,
         )
         logger.debug(f"MMG DataLoader created with batch_size=32")
@@ -159,7 +164,7 @@ def main():
             fused_dataset,
             batch_size=32,
             shuffle=True,
-            num_workers=4,
+            num_workers=0,
             pin_memory=True,
         )
         logger.debug(f"Fused DataLoader created with batch_size=32")

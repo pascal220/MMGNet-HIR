@@ -19,22 +19,28 @@ logger = logging.getLogger(__name__)
 
 VALID_MODALITIES = {"MMG", "IMU"}
 
+# Note: "stair_up"/"stair_down" (IMU files) and "stairs_up"/"stairs_down"
+# (MMG files) both occur in the dataset - the source data itself is
+# inconsistent about the singular/plural spelling.
 VALID_CLASSES = {
-    "sit", "stand", "walk",
-    "sit-to-stand", "stand-to-sit",
-    "stair-ascent", "stair-descent"
+    "sit", "stand", "walking",
+    "sit_to_stand", "stand_to_sit",
+    "stair_up", "stair_down",
+    "stairs_up", "stairs_down",
 }
 
-TRANSITION_CLASSES = {"sit-to-stand", "stand-to-sit", "stair-ascent", "stair-descent"}
-
-STEADY_STATE_CLASSES = {"sit", "stand", "walk"}
-
-VALID_TRANSITION_POINTS = {
-    "pre_transition",
-    "transition_start",
-    "transition_end",
-    "post_transition"
+TRANSITION_CLASSES = {
+    "sit_to_stand", "stand_to_sit",
+    "stair_up", "stair_down",
+    "stairs_up", "stairs_down",
 }
+
+STEADY_STATE_CLASSES = {"sit", "stand", "walking"}
+
+# Transition point suffixes found in the 'transitions' folder are numeric
+# markers (percent/position through the transition), e.g. "0", "50", "100",
+# "50m", "100m" - validated with a regex rather than a fixed set.
+VALID_TRANSITION_POINT_PATTERN = re.compile(r"^\d+m?$")
 
 # ---------------------------------------------------------------------------
 # Dataclass — structured metadata container
@@ -79,7 +85,7 @@ class FileNameParser:
         r".*?(N0\d+)"                          # volunteer ID
         r"_(MMG|IMU)"                          # modality
         r"_([\w-]+?)"                          # activity class
-        r"(?:_([\w]+(?:_[\w]+)*))?"            # optional transition point
+        r"(?:_(\d+m?))?"                       # optional transition point
         r"$",
         re.IGNORECASE
     )
@@ -184,11 +190,11 @@ class FileNameParser:
         normalised = raw.lower()
         logger.debug(f"Validating transition point: {normalised}")
 
-        if normalised not in VALID_TRANSITION_POINTS:
+        if not VALID_TRANSITION_POINT_PATTERN.match(normalised):
             logger.error(f"Invalid transition point '{raw}' in file '{stem}'")
             raise ValueError(
                 f"Unrecognised transition point '{raw}' in file '{stem}'. "
-                f"Expected one of {VALID_TRANSITION_POINTS}."
+                f"Expected a numeric marker matching {VALID_TRANSITION_POINT_PATTERN.pattern}."
             )
 
         logger.debug(f"Transition point '{normalised}' is valid")
