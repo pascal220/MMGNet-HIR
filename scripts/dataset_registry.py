@@ -28,14 +28,13 @@ class RegistryColumns:
     ACTIVITY_CLASS = "activity_class"
     CLASS_LABEL = "class_label"
     IS_TRANSITION_CLASS = "is_transition_class"
-    TRANSITION_POINT = "transition_point"
-    HAS_TRANSITION_INFO = "has_transition_info"
+    TRANSITION_INFO = "transition_info"
     WIDTH = "width"
     HEIGHT = "height"
     CHANNELS = "channels"
     SAMPLES = "samples"
-    IS_1D = "is_1d"
-    FOLDER = "folder"                  # ← NEW: tracks which folder a file came from
+    NO_WINDOWS = "no_windows"
+    FOLDER = "folder"                  
 
 
 CLASS_TO_LABEL: dict[str, int] = {
@@ -44,8 +43,8 @@ CLASS_TO_LABEL: dict[str, int] = {
     "walking": 2,
     "sit_to_stand": 3,
     "stand_to_sit": 4,
-    "stair_up": 5,
-    "stair_down": 6,
+    "stairs_up": 5,
+    "stairs_down": 6,
 }
 
 LABEL_TO_CLASS: dict[int, str] = {v: k for k, v in CLASS_TO_LABEL.items()}
@@ -190,7 +189,7 @@ class DatasetRegistry:
     def get_transition_samples(self, df: pd.DataFrame) -> pd.DataFrame:
         logger.debug(f"Extracting transition samples from {len(df)} samples")
         filtered = df[
-            df[RegistryColumns.HAS_TRANSITION_INFO]
+            df[RegistryColumns.TRANSITION_INFO].notna()
         ].reset_index(drop=True)
         logger.debug(f"Found {len(filtered)} transition samples")
         return filtered
@@ -218,12 +217,18 @@ class DatasetRegistry:
         folder_tag: str,
     ) -> Optional[dict]:
         try:
+            
+
             metadata: FileMetadata = self._parser.parse(str(file_path))
             logger.debug(f"Parsed {file_path.name}: {metadata.volunteer_id} {metadata.modality} {metadata.activity_class}")
             record = self._metadata_to_record(metadata, folder_tag)
 
             if load_shapes:
                 shape = self._load_shape(file_path)
+                
+                if "Wavelet" in str(file_path):
+                    print(file_path)
+                
                 if shape is not None:
                     record.update(self._shape_to_record(shape))
                     logger.debug(f"Shape loaded for {file_path.name}: {shape}")
@@ -243,8 +248,7 @@ class DatasetRegistry:
             RegistryColumns.ACTIVITY_CLASS: metadata.activity_class,
             RegistryColumns.CLASS_LABEL: CLASS_TO_LABEL[metadata.activity_class],
             RegistryColumns.IS_TRANSITION_CLASS: metadata.is_transition_class,
-            RegistryColumns.TRANSITION_POINT: metadata.transition_point,
-            RegistryColumns.HAS_TRANSITION_INFO: metadata.has_transition_info,
+            RegistryColumns.TRANSITION_INFO: metadata.transition_point,
             RegistryColumns.FOLDER: folder_tag,
         }
 
@@ -252,10 +256,8 @@ class DatasetRegistry:
     def _load_shape(file_path: Path) -> Optional[tuple]:
         try:
             import numpy as np
-            with open(file_path, "rb") as f:
-                version = np.lib.format.read_magic(f)
-                shape, _, _ = np.lib.format._read_array_header(f, version)
-            return shape
+            array = np.load(file_path, mmap_mode="r", allow_pickle=False)
+            return tuple(array.shape)
         except Exception as exc:
             print(f"[DatasetRegistry] Could not read shape of '{file_path}': {exc}")
             return None
@@ -270,16 +272,19 @@ class DatasetRegistry:
         if len(shape) < 3:
             return {}
         samples = shape[0]
-        height, width = shape[-2], shape[-1]
-        channels = 1
-        for dim in shape[1:-2]:
-            channels *= dim
+        no_windows = shape[1]
+        width, channels = shape[-2], shape[-1]
+        if len(shape) > 4:
+            height = shape[2]
+        else:
+            height = 1
+            
         return {
             RegistryColumns.WIDTH: width,
             RegistryColumns.HEIGHT: height,
             RegistryColumns.CHANNELS: channels,
             RegistryColumns.SAMPLES: samples,
-            RegistryColumns.IS_1D: height == 1,
+            RegistryColumns.NO_WINDOWS: no_windows,
         }
 
     @staticmethod
@@ -288,13 +293,10 @@ class DatasetRegistry:
         dtype_map = {
             col.CLASS_LABEL: "int8",
             col.IS_TRANSITION_CLASS: "bool",
-            col.HAS_TRANSITION_INFO: "bool",
         }
         for column, dtype in dtype_map.items():
             if column in df.columns:
                 df[column] = df[column].astype(dtype)
-        if col.IS_1D in df.columns:
-            df[col.IS_1D] = df[col.IS_1D].astype("bool")
         return df
 
     @staticmethod
