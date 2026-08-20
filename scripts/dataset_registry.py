@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Optional, Union
 
+import numpy as np
 import pandas as pd
 
 from file_parser import FileMetadata, FileNameParser
@@ -29,11 +30,11 @@ class RegistryColumns:
     CLASS_LABEL = "class_label"
     IS_TRANSITION_CLASS = "is_transition_class"
     TRANSITION_INFO = "transition_info"
-    WIDTH = "width"
-    HEIGHT = "height"
-    CHANNELS = "channels"
     SAMPLES = "samples"
     NO_WINDOWS = "no_windows"
+    HEIGHT = "height"
+    WIDTH = "width"
+    CHANNELS = "channels"
     FOLDER = "folder"                  
 
 
@@ -105,7 +106,7 @@ class DatasetRegistry:
             logger.error(f"Directory not found: {directory}")
             raise FileNotFoundError(f"Directory not found: {directory}")
 
-        logger.debug(f"Scanning directory recursively for .npy files")
+        logger.debug("Scanning directory recursively for .npy files")
         records = []
         file_count = 0
 
@@ -179,12 +180,148 @@ class DatasetRegistry:
         return filtered
 
     def filter_by_volunteer(self, df: pd.DataFrame, volunteer_id: str) -> pd.DataFrame:
+        volunteer_id = self.normalize_volunteer_id(volunteer_id)
         logger.debug(f"Filtering {len(df)} samples by volunteer '{volunteer_id}'")
         filtered = df[
-            df[RegistryColumns.VOLUNTEER_ID] == volunteer_id.upper()
+            df[RegistryColumns.VOLUNTEER_ID] == volunteer_id
         ].reset_index(drop=True)
         logger.debug(f"Filtered result: {len(filtered)} samples")
         return filtered
+
+    @staticmethod
+    def normalize_volunteer_id(volunteer_id: Union[int, str]) -> str:
+        """Return a canonical volunteer identifier such as ``N004``."""
+        if isinstance(volunteer_id, (int, np.integer)):
+            if volunteer_id < 0:
+                raise ValueError("Volunteer number must be non-negative.")
+            return f"N{int(volunteer_id):03d}"
+
+        if not isinstance(volunteer_id, str):
+            raise TypeError("volunteer_id must be an integer or string.")
+
+        value = volunteer_id.strip().upper()
+        if value.isdigit():
+            return f"N{int(value):03d}"
+        if value.startswith("N") and value[1:].isdigit():
+            return f"N{int(value[1:]):03d}"
+        raise ValueError(
+            f"Invalid volunteer ID '{volunteer_id}'. Use an integer or an ID such as N004."
+        )
+
+    @staticmethod
+    def _validate_registry(df: pd.DataFrame) -> None:
+        """Validate the columns required by volunteer-selection methods."""
+        required = {
+            RegistryColumns.VOLUNTEER_ID,
+            RegistryColumns.CLASS_LABEL,
+            RegistryColumns.FILE_PATH,
+        }
+        missing = required.difference(df.columns)
+        if missing:
+            raise ValueError(f"Registry is missing required columns: {sorted(missing)}")
+        if df.empty:
+            raise ValueError("Cannot select volunteers from an empty registry.")
+
+    def select_volunteers_split(
+        self,
+        df: pd.DataFrame,
+        train_count: int,
+        test_count: int,
+        seed: int = 42,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Randomly split distinct volunteers into train and test registries."""
+        self._validate_registry(df)
+        if not isinstance(train_count, (int, np.integer)) or train_count < 1:
+            raise ValueError("train_count must be a positive integer.")
+        if not isinstance(test_count, (int, np.integer)) or test_count < 1:
+            raise ValueError("test_count must be a positive integer.")
+
+        volunteers = np.array(
+            sorted(df[RegistryColumns.VOLUNTEER_ID].dropna().unique())
+        )
+        required_count = int(train_count) + int(test_count)
+        if required_count > len(volunteers):
+            raise ValueError(
+                f"Requested {required_count} volunteers, but only "
+                f"{len(volunteers)} are available: {volunteers.tolist()}"
+            )
+
+        selected = np.random.default_rng(seed).permutation(volunteers)
+        train_ids = selected[:train_count]
+        test_ids = selected[train_count:required_count]
+        logger.info("Volunteer split (seed=%d): train=%s, test=%s", seed,
+                    train_ids.tolist(), test_ids.tolist())
+
+        train_df = df[df[RegistryColumns.VOLUNTEER_ID].isin(train_ids)].copy()
+        test_df = df[df[RegistryColumns.VOLUNTEER_ID].isin(test_ids)].copy()
+        return train_df.reset_index(drop=True), test_df.reset_index(drop=True)
+
+    def select_test_coverage(
+        self,
+        df: pd.DataFrame,
+        volunteer_ids: list[str],
+        minimum_transition_infos: int = 5,
+        seed: int = 42,
+    ) -> pd.DataFrame:
+        """Select mandatory test rows for every class and volunteer.
+
+        One row is selected for each distinct ``transition_info`` value.  The
+        selection is restricted to the transitions folder, whose rows are the
+        mandatory core records in this project.
+        """
+        self._validate_registry(df)
+        if minimum_transition_infos < 1:
+            raise ValueError("minimum_transition_infos must be positive.")
+        if RegistryColumns.TRANSITION_INFO not in df.columns:
+            raise ValueError("Registry does not contain transition_info metadata.")
+
+        volunteers = [self.normalize_volunteer_id(value) for value in volunteer_ids]
+        candidates = df[
+            (df[RegistryColumns.VOLUNTEER_ID].isin(volunteers))
+            & (df[RegistryColumns.FOLDER] == "folder_1")
+            & (df[RegistryColumns.TRANSITION_INFO].notna())
+        ]
+        rng = np.random.default_rng(seed)
+        selected_parts: list[pd.DataFrame] = []
+
+        for volunteer_id in volunteers:
+            volunteer_df = candidates[
+                candidates[RegistryColumns.VOLUNTEER_ID] == volunteer_id
+            ]
+            for class_label in sorted(CLASS_TO_LABEL.values()):
+                class_df = volunteer_df[
+                    volunteer_df[RegistryColumns.CLASS_LABEL] == class_label
+                ]
+                transition_values = sorted(
+                    class_df[RegistryColumns.TRANSITION_INFO].unique()
+                )
+                if len(transition_values) < minimum_transition_infos:
+                    raise ValueError(
+                        f"Volunteer {volunteer_id}, class {class_label} has "
+                        f"only {len(transition_values)} distinct transition_info "
+                        f"values; {minimum_transition_infos} are required."
+                    )
+
+                chosen_values = rng.choice(
+                    transition_values,
+                    size=minimum_transition_infos,
+                    replace=False,
+                )
+                for transition_value in chosen_values:
+                    rows = class_df[
+                        class_df[RegistryColumns.TRANSITION_INFO] == transition_value
+                    ].sort_values(RegistryColumns.FILE_PATH)
+                    selected_parts.append(rows.iloc[[0]])
+
+        if not selected_parts:
+            raise ValueError("No transition test-coverage rows were found.")
+        result = pd.concat(selected_parts, ignore_index=True)
+        logger.info(
+            "Selected %d mandatory test rows (%d per volunteer minimum)",
+            len(result),
+            minimum_transition_infos * df[RegistryColumns.CLASS_LABEL].nunique(),
+        )
+        return result
 
     def get_transition_samples(self, df: pd.DataFrame) -> pd.DataFrame:
         logger.debug(f"Extracting transition samples from {len(df)} samples")
@@ -225,9 +362,6 @@ class DatasetRegistry:
 
             if load_shapes:
                 shape = self._load_shape(file_path)
-                
-                if "Wavelet" in str(file_path):
-                    print(file_path)
                 
                 if shape is not None:
                     record.update(self._shape_to_record(shape))
@@ -301,25 +435,14 @@ class DatasetRegistry:
 
     @staticmethod
     def _add_file_size_column(df: pd.DataFrame) -> pd.DataFrame:
-        """Add 'file_size_bytes', from shape columns if available, else from disk."""
+        """Add the actual on-disk size of each registered file in bytes.
+
+        Shape-based estimates are unsuitable here: they can omit dimensions,
+        assume the wrong dtype, and do not include the NumPy file header.
+        """
         if df.empty:
             df["file_size_bytes"] = pd.Series(dtype="int64")
             return df
 
-        shape_cols = [
-            RegistryColumns.WIDTH,
-            RegistryColumns.HEIGHT,
-            RegistryColumns.CHANNELS,
-            RegistryColumns.SAMPLES,
-        ]
-        if all(c in df.columns for c in shape_cols):
-            df["file_size_bytes"] = (
-                df[RegistryColumns.WIDTH]
-                * df[RegistryColumns.HEIGHT]
-                * df[RegistryColumns.CHANNELS]
-                * df[RegistryColumns.SAMPLES]
-                * 4  # float32
-            )
-        else:
-            df["file_size_bytes"] = df[RegistryColumns.FILE_PATH].apply(os.path.getsize)
+        df["file_size_bytes"] = df[RegistryColumns.FILE_PATH].apply(os.path.getsize)
         return df

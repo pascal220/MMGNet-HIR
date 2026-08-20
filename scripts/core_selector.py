@@ -215,39 +215,22 @@ class CoreDataSelector:
 
     def _validate_size_column(self) -> None:
         """
-        Ensure 'file_size_bytes' column exists. If not, compute it
-        from the shape columns (width × height × channels × samples × 4 bytes).
+        Ensure 'file_size_bytes' contains actual on-disk file sizes.
+
+        Shape-based estimates can omit dimensions and assume the wrong dtype,
+        so they must not be used for byte budgets.
         """
         logger.debug("Validating size column")
         if "file_size_bytes" in self._df.columns:
             logger.debug("file_size_bytes column already exists")
             return
 
-        required = [
-            RegistryColumns.WIDTH,
-            RegistryColumns.HEIGHT,
-            RegistryColumns.CHANNELS,
-            RegistryColumns.SAMPLES,
-        ]
-
-        if all(col in self._df.columns for col in required):
-            logger.debug("Computing file_size_bytes from shape columns")
-            self._df["file_size_bytes"] = (
-                self._df[RegistryColumns.WIDTH]
-                * self._df[RegistryColumns.HEIGHT]
-                * self._df[RegistryColumns.CHANNELS]
-                * self._df[RegistryColumns.SAMPLES]
-                * 4  # float32 = 4 bytes
-            )
-            logger.debug(f"Computed sizes, range: {self._df['file_size_bytes'].min() / (1024**2):.2f} - {self._df['file_size_bytes'].max() / (1024**2):.2f} MB")
-        else:
-            # Fall back to reading file sizes from disk
-            logger.debug("Computing file_size_bytes from disk")
-            import os
-            self._df["file_size_bytes"] = self._df[
-                RegistryColumns.FILE_PATH
-            ].apply(os.path.getsize)
-            logger.debug(f"File sizes read from disk")
+        logger.debug("Computing file_size_bytes from disk")
+        import os
+        self._df["file_size_bytes"] = self._df[RegistryColumns.FILE_PATH].apply(
+            os.path.getsize
+        )
+        logger.debug("File sizes read from disk")
 
     def _assert_selected(self) -> None:
         if self._core_df is None:

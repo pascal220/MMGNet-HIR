@@ -46,6 +46,7 @@ VALID_TRANSITION_POINT_PATTERN = re.compile(r"^\d+m?$")
 # Dataclass — structured metadata container
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FileMetadata:
     """Structured container for all metadata extracted from a .npy filename."""
@@ -144,7 +145,7 @@ class FileNameParser:
             is_transition_class=activity_class in TRANSITION_CLASSES,
             transition_point=transition_point,
         )
-        logger.debug(f"FileMetadata created successfully")
+        logger.debug("FileMetadata created successfully")
         return metadata
 
     # ------------------------------------------------------------------

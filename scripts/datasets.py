@@ -57,9 +57,8 @@ class BaseActivityDataset(Dataset):
 
     def get_transition_info(self, index: int) -> Optional[str]:
         row = self._df.iloc[index]
-        if row[RegistryColumns.HAS_TRANSITION_INFO]:
-            return row[RegistryColumns.TRANSITION_POINT]
-        return None
+        value = row.get(RegistryColumns.TRANSITION_INFO)
+        return None if pd.isna(value) else value
 
     def get_metadata(self, index: int) -> dict:
         row = self._df.iloc[index]
@@ -69,8 +68,8 @@ class BaseActivityDataset(Dataset):
             "activity_class": row[RegistryColumns.ACTIVITY_CLASS],
             "class_label": row[RegistryColumns.CLASS_LABEL],
             "is_transition_class": row[RegistryColumns.IS_TRANSITION_CLASS],
-            "transition_point": row.get(RegistryColumns.TRANSITION_POINT),
-            "has_transition_info": row[RegistryColumns.HAS_TRANSITION_INFO],
+            "transition_info": row.get(RegistryColumns.TRANSITION_INFO),
+            "has_transition_info": pd.notna(row.get(RegistryColumns.TRANSITION_INFO)),
         }
 
     # ------------------------------------------------------------------
@@ -247,7 +246,7 @@ class FusedModalityDataset(BaseActivityDataset):
         merge_keys = [
             RegistryColumns.VOLUNTEER_ID,
             RegistryColumns.ACTIVITY_CLASS,
-            RegistryColumns.TRANSITION_POINT,
+            RegistryColumns.TRANSITION_INFO,
         ]
 
         merged = pd.merge(

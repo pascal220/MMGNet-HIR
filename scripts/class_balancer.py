@@ -112,6 +112,8 @@ class ClassBalancer:
             Per-class counts, weights, and target count.
         """
         logger.debug(f"Computing balance stats for {len(df)} samples")
+        if df.empty:
+            raise ValueError("Cannot compute class statistics for an empty DataFrame.")
         counts = df[RegistryColumns.CLASS_LABEL].value_counts().sort_index()
         target = int(counts.min())
         logger.debug(f"Class counts: {dict(counts)}")
@@ -119,12 +121,59 @@ class ClassBalancer:
 
         # Inverse frequency weights — minority class gets weight 1.0
         weights = target / counts
-        logger.debug(f"Computed inverse frequency weights")
+        logger.debug("Computed inverse frequency weights")
 
         return BalanceStats(
             class_counts=counts,
             weights=weights,
             target_count=target,
+        )
+
+    def balance_with_tolerance(
+        self,
+        df: pd.DataFrame,
+        allowed_imbalance: float = 0.10,
+        mandatory_folder: str = "folder_1",
+    ) -> pd.DataFrame:
+        """Balance classes without removing mandatory-folder records.
+
+        The smallest class count defines the baseline.  Optional rows in
+        larger classes are undersampled until their count is no more than
+        ``allowed_imbalance`` above that baseline.  Every row from
+        ``mandatory_folder`` is retained, even when that makes the requested
+        tolerance mathematically impossible.
+        """
+        if not 0 <= allowed_imbalance:
+            raise ValueError("allowed_imbalance must be non-negative.")
+        if df.empty:
+            return df.copy()
+        required = {RegistryColumns.CLASS_LABEL, RegistryColumns.FOLDER}
+        missing = required.difference(df.columns)
+        if missing:
+            raise ValueError(f"DataFrame is missing required columns: {sorted(missing)}")
+
+        counts = df[RegistryColumns.CLASS_LABEL].value_counts()
+        baseline = int(counts.min())
+        tolerance_target = int(np.ceil(baseline * (1 + allowed_imbalance)))
+        parts: list[pd.DataFrame] = []
+
+        for class_label, class_df in df.groupby(
+            RegistryColumns.CLASS_LABEL, sort=True
+        ):
+            mandatory = class_df[class_df[RegistryColumns.FOLDER] == mandatory_folder]
+            optional = class_df[class_df[RegistryColumns.FOLDER] != mandatory_folder]
+            target = max(tolerance_target, len(mandatory))
+            optional_count = max(0, target - len(mandatory))
+            if len(optional) > optional_count:
+                optional = optional.sample(
+                    n=optional_count,
+                    random_state=self._random_state,
+                )
+            parts.append(pd.concat([mandatory, optional], ignore_index=False))
+
+        balanced = pd.concat(parts, ignore_index=True)
+        return balanced.sample(frac=1, random_state=self._random_state).reset_index(
+            drop=True
         )
 
     def balance(
@@ -192,7 +241,7 @@ class ClassBalancer:
         balanced_primary : pd.DataFrame
         balanced_secondary : pd.DataFrame
         """
-        logger.info("="*60)
+        logger.info("=" * 60)
         logger.info("Starting balance_to_available")
         logger.info(f"Primary folder (1): {len(primary_df)} samples")
         logger.info(f"Secondary folder (2): {len(secondary_df)} samples")
@@ -358,29 +407,13 @@ class ClassBalancer:
     @staticmethod
     def _ensure_size_column(df: pd.DataFrame) -> None:
         """
-        Add 'file_size_bytes' column if absent, computed from shape
-        columns or from disk.
+        Add the actual on-disk file size in bytes if the column is absent.
+
+        Shape-based estimates can omit dimensions and assume the wrong dtype,
+        so they must not be used for byte budgets.
         """
         if "file_size_bytes" in df.columns:
             return
 
-        shape_cols = [
-            RegistryColumns.WIDTH,
-            RegistryColumns.HEIGHT,
-            RegistryColumns.CHANNELS,
-            RegistryColumns.SAMPLES,
-        ]
-
-        if all(c in df.columns for c in shape_cols):
-            df["file_size_bytes"] = (
-                df[RegistryColumns.WIDTH]
-                * df[RegistryColumns.HEIGHT]
-                * df[RegistryColumns.CHANNELS]
-                * df[RegistryColumns.SAMPLES]
-                * 4  # float32
-            )
-        else:
-            import os
-            df["file_size_bytes"] = df[
-                RegistryColumns.FILE_PATH
-            ].apply(os.path.getsize)
+        import os
+        df["file_size_bytes"] = df[RegistryColumns.FILE_PATH].apply(os.path.getsize)

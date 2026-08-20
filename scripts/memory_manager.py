@@ -9,13 +9,8 @@ import logging
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
 
 import numpy as np
-import pandas as pd
-
-from dataset_registry import RegistryColumns
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +138,13 @@ class LRUArrayCache:
             logger.debug(f"Loading file {idx}/{total}: {path}")
             array = np.load(path, allow_pickle=False)
             entry = CachedEntry.from_array(array, is_core=True)
+            if loaded_bytes + entry.size_bytes > self._budget.total_budget_bytes:
+                raise MemoryError(
+                    "Mandatory transition data exceeds the configured memory "
+                    f"budget while loading '{path}'. Required at least "
+                    f"{(loaded_bytes + entry.size_bytes) / BYTES_PER_GB:.2f} GB, "
+                    f"but only {self._budget.total_budget_gb:.2f} GB is available."
+                )
             self._core[path] = entry
             loaded_bytes += entry.size_bytes
 
@@ -176,20 +178,20 @@ class LRUArrayCache:
         logger.debug(f"Getting array from cache: {file_path}")
         with self._lock:
             if file_path in self._core:
-                logger.debug(f"Found in core cache")
+                logger.debug("Found in core cache")
                 return self._core[file_path].array
 
             if file_path in self._dynamic:
-                logger.debug(f"Found in dynamic cache, moving to end")
+                logger.debug("Found in dynamic cache, moving to end")
                 self._dynamic.move_to_end(file_path)
                 return self._dynamic[file_path].array
 
-            logger.debug(f"Not in cache, loading dynamically")
+            logger.debug("Not in cache, loading dynamically")
             return self._load_dynamic(file_path)
 
     def evict_all_dynamic(self) -> None:
         """Evict all folder 2 dynamic cache entries."""
-        logger.info(f"Evicting all dynamic cache entries")
+        logger.info("Evicting all dynamic cache entries")
         with self._lock:
             evicted_size = sum(entry.size_bytes for entry in self._dynamic.values())
             for entry in self._dynamic.values():
@@ -234,7 +236,7 @@ class LRUArrayCache:
 
         evicted_count = 0
         while not self._budget.can_fit(entry.size_bytes) and self._dynamic:
-            logger.debug(f"Budget full, evicting LRU entry")
+            logger.debug("Budget full, evicting LRU entry")
             self._evict_lru()
             evicted_count += 1
 
