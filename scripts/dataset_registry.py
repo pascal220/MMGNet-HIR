@@ -50,6 +50,9 @@ CLASS_TO_LABEL: dict[str, int] = {
 
 LABEL_TO_CLASS: dict[int, str] = {v: k for k, v in CLASS_TO_LABEL.items()}
 
+# The only transition markers allowed in the transitions folder.
+VALID_TRANSITION_VALUES: frozenset[str] = frozenset({"100m", "50m", "0", "50", "100"})
+
 
 # ---------------------------------------------------------------------------
 # Registry Builder
@@ -256,70 +259,151 @@ class DatasetRegistry:
         test_df = df[df[RegistryColumns.VOLUNTEER_ID].isin(test_ids)].copy()
         return train_df.reset_index(drop=True), test_df.reset_index(drop=True)
 
-    def select_test_coverage(
+    def get_valid_transitions(
         self,
         df: pd.DataFrame,
-        volunteer_ids: list[str],
-        minimum_transition_infos: int = 5,
-        seed: int = 42,
+        volunteer_ids: Optional[list[str]] = None,
     ) -> pd.DataFrame:
-        """Select mandatory test rows for every class and volunteer.
+        """Return transitions-folder rows with a valid transition value.
 
-        One row is selected for each distinct ``transition_info`` value.  The
-        selection is restricted to the transitions folder, whose rows are the
-        mandatory core records in this project.
+        Rows in folder_1 whose ``transition_info`` is not one of the five
+        expected values are dropped with a warning.
         """
         self._validate_registry(df)
-        if minimum_transition_infos < 1:
-            raise ValueError("minimum_transition_infos must be positive.")
         if RegistryColumns.TRANSITION_INFO not in df.columns:
             raise ValueError("Registry does not contain transition_info metadata.")
 
-        volunteers = [self.normalize_volunteer_id(value) for value in volunteer_ids]
-        candidates = df[
-            (df[RegistryColumns.VOLUNTEER_ID].isin(volunteers))
-            & (df[RegistryColumns.FOLDER] == "folder_1")
-            & (df[RegistryColumns.TRANSITION_INFO].notna())
-        ]
+        in_folder = df[RegistryColumns.FOLDER] == "folder_1"
+        valid = df[RegistryColumns.TRANSITION_INFO].isin(VALID_TRANSITION_VALUES)
+        invalid = df[in_folder & ~valid]
+        if not invalid.empty:
+            logger.warning(
+                "Dropping %d transitions rows with unexpected transition "
+                "values: %s",
+                len(invalid),
+                sorted(
+                    invalid[RegistryColumns.TRANSITION_INFO].dropna().unique()
+                ),
+            )
+
+        mask = in_folder & valid
+        if volunteer_ids is not None:
+            normalized = [self.normalize_volunteer_id(v) for v in volunteer_ids]
+            mask &= df[RegistryColumns.VOLUNTEER_ID].isin(normalized)
+        return df[mask].copy()
+
+    def split_transitions_by_fraction(
+        self,
+        df: pd.DataFrame,
+        volunteer_id: Union[int, str],
+        test_fraction: float = 0.10,
+        seed: int = 42,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Split one volunteer's transitions rows into train and test sets.
+
+        The draw is stratified per (modality, transition value): each group
+        contributes ``max(1, floor(test_fraction * n))`` rows to the test
+        set and the remainder to the training set. Rows keep every registry
+        column, so downstream bucketing uses class labels only.
+        """
+        if not 0 < test_fraction < 1:
+            raise ValueError("test_fraction must be between 0 and 1.")
+        volunteer_id = self.normalize_volunteer_id(volunteer_id)
+        candidates = self.get_valid_transitions(df, [volunteer_id])
+        if candidates.empty:
+            raise ValueError(
+                f"No valid transitions rows found for volunteer {volunteer_id}."
+            )
+
         rng = np.random.default_rng(seed)
-        selected_parts: list[pd.DataFrame] = []
+        train_parts: list[pd.DataFrame] = []
+        test_parts: list[pd.DataFrame] = []
+        group_keys = [RegistryColumns.MODALITY, RegistryColumns.TRANSITION_INFO]
 
-        for volunteer_id in volunteers:
-            volunteer_df = candidates[
-                candidates[RegistryColumns.VOLUNTEER_ID] == volunteer_id
-            ]
-            for class_label in sorted(CLASS_TO_LABEL.values()):
-                class_df = volunteer_df[
-                    volunteer_df[RegistryColumns.CLASS_LABEL] == class_label
-                ]
-                transition_values = sorted(
-                    class_df[RegistryColumns.TRANSITION_INFO].unique()
+        for (modality, value), group in candidates.groupby(group_keys, sort=True):
+            group = group.sort_values(RegistryColumns.FILE_PATH)
+            if len(group) < 2:
+                raise ValueError(
+                    f"Volunteer {volunteer_id}, {modality} transition "
+                    f"'{value}' has only {len(group)} row(s); at least 2 "
+                    "are required to form a train/test split."
                 )
-                if len(transition_values) < minimum_transition_infos:
-                    raise ValueError(
-                        f"Volunteer {volunteer_id}, class {class_label} has "
-                        f"only {len(transition_values)} distinct transition_info "
-                        f"values; {minimum_transition_infos} are required."
-                    )
+            n_test = max(1, int(np.floor(len(group) * test_fraction)))
+            test_idx = rng.choice(
+                group.index.to_numpy(), size=n_test, replace=False
+            )
+            test_parts.append(group.loc[np.sort(test_idx)])
+            train_parts.append(group.drop(index=test_idx))
 
-                chosen_values = rng.choice(
-                    transition_values,
-                    size=minimum_transition_infos,
-                    replace=False,
-                )
-                for transition_value in chosen_values:
-                    rows = class_df[
-                        class_df[RegistryColumns.TRANSITION_INFO] == transition_value
-                    ].sort_values(RegistryColumns.FILE_PATH)
-                    selected_parts.append(rows.iloc[[0]])
-
-        if not selected_parts:
-            raise ValueError("No transition test-coverage rows were found.")
-        result = pd.concat(selected_parts, ignore_index=True)
+        train_df = pd.concat(train_parts, ignore_index=True)
+        test_df = pd.concat(test_parts, ignore_index=True)
         logger.info(
-            "Selected %d mandatory test rows (%d per volunteer minimum)",
-            len(result),
-            minimum_transition_infos * df[RegistryColumns.CLASS_LABEL].nunique(),
+            "Transitions split for %s (seed=%d): %d train rows, %d test rows",
+            volunteer_id, seed, len(train_df), len(test_df),
+        )
+        return train_df, test_df
+
+    def match_just_states(
+        self,
+        transitions_df: pd.DataFrame,
+        just_states_df: pd.DataFrame,
+        ratio: float = 1.10,
+        seed: int = 42,
+    ) -> pd.DataFrame:
+        """Sample just_states rows to match transitions counts per bucket.
+
+        For each (volunteer, class label, modality) bucket present in
+        ``transitions_df``, ``floor(ratio * transitions count)`` rows are
+        drawn at random from ``just_states_df``. If fewer rows are
+        available, all of them are used and a warning is logged.
+        """
+        if ratio <= 0:
+            raise ValueError("ratio must be positive.")
+        pool = just_states_df[
+            just_states_df[RegistryColumns.FOLDER] == "folder_2"
+        ]
+        if transitions_df.empty or pool.empty:
+            return pool.iloc[0:0].copy()
+
+        rng = np.random.default_rng(seed)
+        bucket_keys = [
+            RegistryColumns.VOLUNTEER_ID,
+            RegistryColumns.CLASS_LABEL,
+            RegistryColumns.MODALITY,
+        ]
+        parts: list[pd.DataFrame] = []
+
+        for (volunteer, label, modality), count in (
+            transitions_df.groupby(bucket_keys).size().items()
+        ):
+            target = int(np.floor(count * ratio))
+            if target == 0:
+                continue
+            available = pool[
+                (pool[RegistryColumns.VOLUNTEER_ID] == volunteer)
+                & (pool[RegistryColumns.CLASS_LABEL] == label)
+                & (pool[RegistryColumns.MODALITY] == modality)
+            ].sort_values(RegistryColumns.FILE_PATH)
+            if len(available) <= target:
+                if len(available) < target:
+                    logger.warning(
+                        "just_states shortfall for %s class %d %s: wanted "
+                        "%d rows, only %d available",
+                        volunteer, label, modality, target, len(available),
+                    )
+                parts.append(available)
+                continue
+            chosen = rng.choice(
+                available.index.to_numpy(), size=target, replace=False
+            )
+            parts.append(available.loc[np.sort(chosen)])
+
+        if not parts:
+            return pool.iloc[0:0].copy()
+        result = pd.concat(parts, ignore_index=True)
+        logger.info(
+            "Matched %d just_states rows to %d transitions rows (ratio=%.2f)",
+            len(result), len(transitions_df), ratio,
         )
         return result
 

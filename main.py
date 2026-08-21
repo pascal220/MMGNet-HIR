@@ -37,10 +37,10 @@ class ExperimentConfig:
     same_volunteer_id: int | str | None = None
     train_volunteer_count: int = 8
     test_volunteer_count: int = 2
-    total_budget_gb: float = 21.0
+    total_budget_gb: float = 24.0
     seed: int = 42
-    allowed_class_imbalance: float = 0.10
-    minimum_transition_infos: int = 5
+    test_fraction: float = 0.10
+    just_states_ratio: float = 1.10
 
     def validate(self) -> None:
         """Validate configuration values before scanning or loading data."""
@@ -50,10 +50,10 @@ class ExperimentConfig:
             )
         if self.total_budget_gb <= 0:
             raise ValueError("total_budget_gb must be positive.")
-        if not 0 <= self.allowed_class_imbalance:
-            raise ValueError("allowed_class_imbalance must be non-negative.")
-        if self.minimum_transition_infos < 1:
-            raise ValueError("minimum_transition_infos must be positive.")
+        if not 0 < self.test_fraction < 1:
+            raise ValueError("test_fraction must be between 0 and 1.")
+        if self.just_states_ratio <= 0:
+            raise ValueError("just_states_ratio must be positive.")
         if self.setup == "same_volunteer" and self.same_volunteer_id is None:
             raise ValueError("same_volunteer_id is required in same_volunteer mode.")
 
@@ -69,45 +69,64 @@ def _select_experiment_data(
 
     if config.setup == "same_volunteer":
         volunteer_id = registry.normalize_volunteer_id(config.same_volunteer_id)
-        selected = registry.filter_by_volunteer(combined, volunteer_id)
-        mandatory_test = registry.select_test_coverage(
-            selected,
-            [volunteer_id],
-            minimum_transition_infos=config.minimum_transition_infos,
+        trans_train, trans_test = registry.split_transitions_by_fraction(
+            combined,
+            volunteer_id,
+            test_fraction=config.test_fraction,
             seed=config.seed,
         )
-        test_paths = set(mandatory_test[RegistryColumns.FILE_PATH])
-        train = selected[
-            ~selected[RegistryColumns.FILE_PATH].isin(test_paths)
-        ].reset_index(drop=True)
-        test = mandatory_test.reset_index(drop=True)
-        selected_transitions = selected[
-            selected[RegistryColumns.FOLDER] == "folder_1"
+        js_pool = registry.filter_by_volunteer(folder_2_df, volunteer_id)
+        js_test = registry.match_just_states(
+            trans_test,
+            js_pool,
+            ratio=config.just_states_ratio,
+            seed=config.seed,
+        )
+        # Keep train and test just_states draws disjoint.
+        remaining_pool = js_pool[
+            ~js_pool[RegistryColumns.FILE_PATH].isin(
+                set(js_test[RegistryColumns.FILE_PATH])
+            )
         ]
-        return train, test, selected_transitions.reset_index(drop=True)
+        js_train = registry.match_just_states(
+            trans_train,
+            remaining_pool,
+            ratio=config.just_states_ratio,
+            seed=config.seed,
+        )
+        train = pd.concat([trans_train, js_train], ignore_index=True)
+        test = pd.concat([trans_test, js_test], ignore_index=True)
+        selected_transitions = pd.concat(
+            [trans_train, trans_test], ignore_index=True
+        )
+        return train, test, selected_transitions
 
-    train, test = registry.select_volunteers_split(
-        combined,
+    # Volunteer-level split: no within-volunteer test extraction.
+    transitions_all = registry.get_valid_transitions(combined)
+    trans_train, trans_test = registry.select_volunteers_split(
+        transitions_all,
         config.train_volunteer_count,
         config.test_volunteer_count,
         seed=config.seed,
     )
-    test_volunteers = sorted(test[RegistryColumns.VOLUNTEER_ID].unique())
-    mandatory_test = registry.select_test_coverage(
-        test,
-        test_volunteers,
-        minimum_transition_infos=config.minimum_transition_infos,
+    js_train = registry.match_just_states(
+        trans_train,
+        folder_2_df,
+        ratio=config.just_states_ratio,
         seed=config.seed,
     )
-    logger.info("Mandatory test coverage: %d rows", len(mandatory_test))
-    selected_paths = set(train[RegistryColumns.FILE_PATH]) | set(
-        test[RegistryColumns.FILE_PATH]
+    js_test = registry.match_just_states(
+        trans_test,
+        folder_2_df,
+        ratio=config.just_states_ratio,
+        seed=config.seed,
     )
-    selected_transitions = combined[
-        (combined[RegistryColumns.FOLDER].eq("folder_1"))
-        & (combined[RegistryColumns.FILE_PATH].isin(selected_paths))
-    ]
-    return train, test, selected_transitions.reset_index(drop=True)
+    train = pd.concat([trans_train, js_train], ignore_index=True)
+    test = pd.concat([trans_test, js_test], ignore_index=True)
+    selected_transitions = pd.concat(
+        [trans_train, trans_test], ignore_index=True
+    )
+    return train, test, selected_transitions
 
 
 def _build_loaders(
@@ -189,8 +208,8 @@ def main(
     test_volunteer_count: int = 2,
     total_budget_gb: float = 21.0,
     seed: int = 42,
-    allowed_class_imbalance: float = 0.10,
-    minimum_transition_infos: int = 5,
+    test_fraction: float = 0.10,
+    just_states_ratio: float = 1.10,
 ) -> dict[str, DataLoader]:
     """Prepare reproducible volunteer-based training and test loaders."""
     config = ExperimentConfig(
@@ -200,8 +219,8 @@ def main(
         test_volunteer_count=test_volunteer_count,
         total_budget_gb=total_budget_gb,
         seed=seed,
-        allowed_class_imbalance=allowed_class_imbalance,
-        minimum_transition_infos=minimum_transition_infos,
+        test_fraction=test_fraction,
+        just_states_ratio=just_states_ratio,
     )
     config.validate()
 
@@ -215,11 +234,9 @@ def main(
         registry, folder_1_df, folder_2_df, config
     )
 
+    # Train composition is fully determined by the selection spec;
+    # inter-class imbalance is handled by the WeightedRandomSampler.
     balancer = ClassBalancer(strategy="undersample", random_state=config.seed)
-    balanced_train = balancer.balance_with_tolerance(
-        train_selected,
-        allowed_imbalance=config.allowed_class_imbalance,
-    )
 
     transition_size_gb = (
         selected_transitions["file_size_bytes"].sum() / (1024**3)
@@ -236,7 +253,7 @@ def main(
         selected_transitions[RegistryColumns.FILE_PATH].tolist()
     )
     loaders = _build_loaders(
-        balanced_train,
+        train_selected,
         test_selected,
         registry,
         balancer,
@@ -244,7 +261,7 @@ def main(
     )
     logger.info(
         "Prepared %d training rows and %d test rows in %s mode.",
-        len(balanced_train),
+        len(train_selected),
         len(test_selected),
         config.setup,
     )
