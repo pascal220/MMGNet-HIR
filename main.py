@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,6 +69,8 @@ def _select_experiment_data(
     combined = pd.concat([folder_1_df, folder_2_df], ignore_index=True)
 
     if config.setup == "same_volunteer":
+        if config.same_volunteer_id is None:
+            raise ValueError("same_volunteer_id is required in same_volunteer mode.")
         volunteer_id = registry.normalize_volunteer_id(config.same_volunteer_id)
         trans_train, trans_test = registry.split_transitions_by_fraction(
             combined,
@@ -146,7 +149,7 @@ def _build_loaders(
         raise ValueError("Training data contains no MMG records.")
     sample_weights = balancer.compute_sample_weights(train_mmg)
     mmg_sampler = WeightedRandomSampler(
-        weights=sample_weights,
+        weights=sample_weights.tolist(),
         num_samples=len(train_mmg),
         replacement=True,
     )
@@ -265,8 +268,45 @@ def main(
         len(test_selected),
         config.setup,
     )
+    logger.info(
+        "Train: %d samples / %d windows | Test: %d samples / %d windows",
+        train_selected[RegistryColumns.SAMPLES].sum(),
+        train_selected[RegistryColumns.NO_WINDOWS].sum(),
+        test_selected[RegistryColumns.SAMPLES].sum(),
+        test_selected[RegistryColumns.NO_WINDOWS].sum(),
+    )
     return loaders
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Prepare volunteer-based training and test loaders."
+    )
+    parser.add_argument(
+        "--setup",
+        choices=["separate_volunteers", "same_volunteer"],
+        default="separate_volunteers",
+    )
+    parser.add_argument(
+        "--same-volunteer-id",
+        default=None,
+        help="Volunteer ID for same_volunteer mode (e.g. 4 or N004).",
+    )
+    parser.add_argument("--train-volunteer-count", type=int, default=8)
+    parser.add_argument("--test-volunteer-count", type=int, default=2)
+    parser.add_argument("--total-budget-gb", type=float, default=21.0)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--test-fraction", type=float, default=0.10)
+    parser.add_argument("--just-states-ratio", type=float, default=1.10)
+    args = parser.parse_args()
+
+    main(
+        setup=args.setup,
+        same_volunteer_id=args.same_volunteer_id,
+        train_volunteer_count=args.train_volunteer_count,
+        test_volunteer_count=args.test_volunteer_count,
+        total_budget_gb=args.total_budget_gb,
+        seed=args.seed,
+        test_fraction=args.test_fraction,
+        just_states_ratio=args.just_states_ratio,
+    )

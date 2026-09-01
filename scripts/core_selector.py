@@ -98,12 +98,14 @@ class CoreDataSelector:
     def core_df(self) -> pd.DataFrame:
         """Core DataFrame. Available after select() is called."""
         self._assert_selected()
+        assert self._core_df is not None
         return self._core_df
 
     @property
     def dynamic_df(self) -> pd.DataFrame:
         """Dynamic DataFrame. Available after select() is called."""
         self._assert_selected()
+        assert self._dynamic_df is not None
         return self._dynamic_df
 
     @property
@@ -113,10 +115,10 @@ class CoreDataSelector:
         Used to scale how many dynamic files are loaded per training step.
         """
         self._assert_selected()
-        n_core = len(self._core_df)
+        n_core = len(self.core_df)
         if n_core == 0:
             return 0.0
-        return len(self._dynamic_df) / n_core
+        return len(self.dynamic_df) / n_core
 
     @property
     def dynamic_files_per_core_example(self) -> float:
@@ -151,13 +153,13 @@ class CoreDataSelector:
         logger.debug(f"Sampling dynamic files for epoch with random_state={random_state}")
         self._assert_selected()
 
-        n_sample = min(len(self._core_df), len(self._dynamic_df))
+        n_sample = min(len(self.core_df), len(self.dynamic_df))
         logger.debug(f"Sampling {n_sample} dynamic files")
 
         if n_sample == 0:
-            return self._dynamic_df.copy()
+            return self.dynamic_df.copy()
 
-        return self._dynamic_df.sample(
+        return self.dynamic_df.sample(
             n=n_sample,
             replace=False,
             random_state=random_state,
@@ -201,9 +203,10 @@ class CoreDataSelector:
                     continue
                 try:
                     row = next(it)
-                    if accumulated_bytes + row.file_size_bytes <= budget_bytes:
+                    file_size = int(getattr(row, "file_size_bytes"))
+                    if accumulated_bytes + file_size <= budget_bytes:
                         selected_indices.append(row.Index)
-                        accumulated_bytes += row.file_size_bytes
+                        accumulated_bytes += file_size
                     else:
                         # Budget exceeded — mark stratum as done
                         exhausted.add(key)
@@ -233,6 +236,6 @@ class CoreDataSelector:
         logger.debug("File sizes read from disk")
 
     def _assert_selected(self) -> None:
-        if self._core_df is None:
+        if self._core_df is None or self._dynamic_df is None:
             logger.error("select() was not called before accessing core/dynamic splits")
             raise RuntimeError("Call select() before accessing core/dynamic splits.")

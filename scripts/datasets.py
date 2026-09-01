@@ -67,7 +67,6 @@ class BaseActivityDataset(Dataset):
             "modality": row[RegistryColumns.MODALITY],
             "activity_class": row[RegistryColumns.ACTIVITY_CLASS],
             "class_label": row[RegistryColumns.CLASS_LABEL],
-            "is_transition_class": row[RegistryColumns.IS_TRANSITION_CLASS],
             "transition_info": row.get(RegistryColumns.TRANSITION_INFO),
             "has_transition_info": pd.notna(row.get(RegistryColumns.TRANSITION_INFO)),
         }

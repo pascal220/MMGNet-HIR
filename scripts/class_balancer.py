@@ -9,7 +9,7 @@ independently, then combined.
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -45,7 +45,7 @@ class BalanceStats:
     def summary(self) -> str:
         lines = ["[BalanceStats] Per-class distribution:"]
         for label, count in self.class_counts.items():
-            weight = self.weights[label]
+            weight = cast(float, self.weights.at[label])
             lines.append(
                 f"  Class {label:>2} | Count: {count:>6} | "
                 f"Weight: {weight:.4f}"
@@ -389,9 +389,10 @@ class ClassBalancer:
                     continue
                 try:
                     row = next(it)
-                    if accumulated + row.file_size_bytes <= budget_bytes:
+                    file_size = int(getattr(row, "file_size_bytes"))
+                    if accumulated + file_size <= budget_bytes:
                         selected_indices.append(row.Index)
-                        accumulated += row.file_size_bytes
+                        accumulated += file_size
                     else:
                         exhausted.add(cls)
                 except StopIteration:

@@ -8,7 +8,7 @@ a unified dual-folder build method.
 import logging
 import os
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, cast
 
 import numpy as np
 import pandas as pd
@@ -28,7 +28,6 @@ class RegistryColumns:
     MODALITY = "modality"
     ACTIVITY_CLASS = "activity_class"
     CLASS_LABEL = "class_label"
-    IS_TRANSITION_CLASS = "is_transition_class"
     TRANSITION_INFO = "transition_info"
     SAMPLES = "samples"
     NO_WINDOWS = "no_windows"
@@ -333,7 +332,7 @@ class DatasetRegistry:
                 group.index.to_numpy(), size=n_test, replace=False
             )
             test_parts.append(group.loc[np.sort(test_idx)])
-            train_parts.append(group.drop(index=test_idx))
+            train_parts.append(group.drop(index=pd.Index(test_idx)))
 
         train_df = pd.concat(train_parts, ignore_index=True)
         test_df = pd.concat(test_parts, ignore_index=True)
@@ -373,9 +372,10 @@ class DatasetRegistry:
         ]
         parts: list[pd.DataFrame] = []
 
-        for (volunteer, label, modality), count in (
+        for key, count in (
             transitions_df.groupby(bucket_keys).size().items()
         ):
+            volunteer, label, modality = cast(tuple, key)
             target = int(np.floor(count * ratio))
             if target == 0:
                 continue
@@ -465,7 +465,6 @@ class DatasetRegistry:
             RegistryColumns.MODALITY: metadata.modality,
             RegistryColumns.ACTIVITY_CLASS: metadata.activity_class,
             RegistryColumns.CLASS_LABEL: CLASS_TO_LABEL[metadata.activity_class],
-            RegistryColumns.IS_TRANSITION_CLASS: metadata.is_transition_class,
             RegistryColumns.TRANSITION_INFO: metadata.transition_point,
             RegistryColumns.FOLDER: folder_tag,
         }
@@ -508,9 +507,8 @@ class DatasetRegistry:
     @staticmethod
     def _cast_dtypes(df: pd.DataFrame) -> pd.DataFrame:
         col = RegistryColumns
-        dtype_map = {
-            col.CLASS_LABEL: "int8",
-            col.IS_TRANSITION_CLASS: "bool",
+        dtype_map: dict[str, np.dtype] = {
+            col.CLASS_LABEL: np.dtype("int8"),
         }
         for column, dtype in dtype_map.items():
             if column in df.columns:
