@@ -28,13 +28,14 @@ class RegistryColumns:
     MODALITY = "modality"
     ACTIVITY_CLASS = "activity_class"
     CLASS_LABEL = "class_label"
+    IS_TRANSITION_CLASS = "is_transition_class"
     TRANSITION_INFO = "transition_info"
     SAMPLES = "samples"
-    NO_WINDOWS = "no_windows"
-    HEIGHT = "height"
-    WIDTH = "width"
-    CHANNELS = "channels"
-    FOLDER = "folder"                  
+    ARRAY_SHAPE = "array_shape"
+    FILE_SIZE_BYTES = "file_size_bytes"
+    ARRAY_NBYTES = "array_nbytes"
+    RESIDENT_BYTES = "resident_bytes"
+    FOLDER = "folder"
 
 
 CLASS_TO_LABEL: dict[str, int] = {
@@ -51,6 +52,102 @@ LABEL_TO_CLASS: dict[int, str] = {v: k for k, v in CLASS_TO_LABEL.items()}
 
 # The only transition markers allowed in the transitions folder.
 VALID_TRANSITION_VALUES: frozenset[str] = frozenset({"100m", "50m", "0", "50", "100"})
+
+# Arrays are cached as float32, so residency is costed at 4 bytes per element.
+FLOAT32_ITEMSIZE = 4
+
+# Stands in for NaN transition_info so pandas can join on the column.
+NO_TRANSITION_KEY = "__none__"
+
+MODALITIES: tuple[str, str] = ("IMU", "MMG")
+
+
+# ---------------------------------------------------------------------------
+# IMU/MMG pairing
+# ---------------------------------------------------------------------------
+
+class PairColumns:
+    PAIR_KEY = "pair_key"
+    SAMPLES = "samples"
+    IMU_PATH = "imu_file_path"
+    MMG_PATH = "mmg_file_path"
+    PAIR_BYTES = "pair_bytes"
+
+
+def build_modality_pairs(df: pd.DataFrame) -> pd.DataFrame:
+    """Group registry rows into one row per IMU/MMG recording pair.
+
+    Both modalities describe the same recording, so selection and dropping
+    operate on pairs. That keeps the IMU and MMG models trained and tested
+    on an identical set of recordings, which is what makes their scores
+    comparable.
+    """
+    col = RegistryColumns
+    if df.empty:
+        return pd.DataFrame(
+            columns=[
+                PairColumns.PAIR_KEY, col.VOLUNTEER_ID, col.CLASS_LABEL,
+                col.TRANSITION_INFO, col.FOLDER, PairColumns.SAMPLES,
+                PairColumns.IMU_PATH, PairColumns.MMG_PATH,
+                PairColumns.PAIR_BYTES,
+            ]
+        )
+
+    work = df.copy()
+    work[PairColumns.PAIR_KEY] = (
+        work[col.VOLUNTEER_ID].astype(str)
+        + "|" + work[col.CLASS_LABEL].astype(str)
+        + "|" + work[col.TRANSITION_INFO].fillna(NO_TRANSITION_KEY).astype(str)
+        + "|" + work[col.FOLDER].astype(str)
+    )
+
+    duplicated = work.duplicated([PairColumns.PAIR_KEY, col.MODALITY])
+    if duplicated.any():
+        raise ValueError(
+            "Registry contains multiple files for the same pair key and "
+            f"modality: {sorted(work.loc[duplicated, PairColumns.PAIR_KEY].unique())}"
+        )
+
+    sides = {
+        modality: work[work[col.MODALITY] == modality].set_index(
+            PairColumns.PAIR_KEY
+        )
+        for modality in MODALITIES
+    }
+    unmatched = sides["IMU"].index.symmetric_difference(sides["MMG"].index)
+    if len(unmatched):
+        raise ValueError(
+            f"{len(unmatched)} recordings lack an IMU/MMG counterpart: "
+            f"{sorted(unmatched)[:5]}"
+        )
+
+    imu, mmg = sides["IMU"], sides["MMG"].reindex(sides["IMU"].index)
+    mismatched = imu[col.SAMPLES] != mmg[col.SAMPLES]
+    if mismatched.any():
+        raise ValueError(
+            "IMU and MMG example counts differ for: "
+            f"{sorted(imu.index[mismatched])[:5]}"
+        )
+
+    pairs = pd.DataFrame(
+        {
+            col.VOLUNTEER_ID: imu[col.VOLUNTEER_ID],
+            col.CLASS_LABEL: imu[col.CLASS_LABEL],
+            col.TRANSITION_INFO: imu[col.TRANSITION_INFO],
+            col.FOLDER: imu[col.FOLDER],
+            PairColumns.SAMPLES: imu[col.SAMPLES],
+            PairColumns.IMU_PATH: imu[col.FILE_PATH],
+            PairColumns.MMG_PATH: mmg[col.FILE_PATH],
+            PairColumns.PAIR_BYTES: imu[col.RESIDENT_BYTES] + mmg[col.RESIDENT_BYTES],
+        }
+    )
+    return pairs.reset_index().sort_values(PairColumns.PAIR_KEY).reset_index(drop=True)
+
+
+def select_pair_rows(df: pd.DataFrame, pairs: pd.DataFrame) -> pd.DataFrame:
+    """Return the registry rows belonging to the given pairs."""
+    paths = set(pairs[PairColumns.IMU_PATH]) | set(pairs[PairColumns.MMG_PATH])
+    return df[df[RegistryColumns.FILE_PATH].isin(paths)].reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +179,6 @@ class DatasetRegistry:
         self,
         directory: Union[str, Path],
         folder_tag: str,
-        load_shapes: bool = True,
     ) -> pd.DataFrame:
         """
         Scan a single directory and return its registry DataFrame.
@@ -93,8 +189,6 @@ class DatasetRegistry:
             Root directory to scan recursively.
         folder_tag : str
             Label stored in the FOLDER column (e.g. 'folder_1', 'folder_2').
-        load_shapes : bool
-            If True, reads array shapes from .npy file headers.
 
         Returns
         -------
@@ -114,7 +208,7 @@ class DatasetRegistry:
 
         for file_path in sorted(directory.rglob("*.npy")):
             file_count += 1
-            record = self._process_file(file_path, load_shapes, folder_tag)
+            record = self._process_file(file_path, folder_tag)
             if record is not None:
                 records.append(record)
             if file_count % 100 == 0:
@@ -123,12 +217,13 @@ class DatasetRegistry:
         logger.info(f"Found {file_count} .npy files in {folder_tag}")
         df = pd.DataFrame(records)
         df = self._cast_dtypes(df)
-        df = self._add_file_size_column(df)
 
         volunteer_count = df[RegistryColumns.VOLUNTEER_ID].nunique()
         logger.info(
             f"Registry '{folder_tag}' complete: {len(df)} files | "
-            f"{volunteer_count} volunteers"
+            f"{volunteer_count} volunteers | "
+            f"{df[RegistryColumns.SAMPLES].sum()} examples | "
+            f"{df[RegistryColumns.RESIDENT_BYTES].sum() / (1024 ** 3):.2f} GiB resident"
         )
 
         return df
@@ -137,22 +232,9 @@ class DatasetRegistry:
         self,
         folder_1: Union[str, Path],
         folder_2: Union[str, Path],
-        load_shapes: bool = True,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
-        Build separate registries for two folders.
-
-        Folder 1 is intended to be fully loaded into memory.
-        Folder 2 is loaded up to a configurable memory budget.
-
-        Parameters
-        ----------
-        folder_1 : str | Path
-            Primary data directory (always fully loaded).
-        folder_2 : str | Path
-            Secondary data directory (loaded up to memory limit).
-        load_shapes : bool
-            If True, reads array shapes from .npy file headers.
+        Build separate registries for the transitions and just_states folders.
 
         Returns
         -------
@@ -162,11 +244,9 @@ class DatasetRegistry:
         logger.info("Building dual-folder registries")
         logger.debug(f"Folder 1: {folder_1}")
         logger.debug(f"Folder 2: {folder_2}")
-        
-        df_1 = self.build_from_folder(folder_1, folder_tag="folder_1",
-                                       load_shapes=load_shapes)
-        df_2 = self.build_from_folder(folder_2, folder_tag="folder_2",
-                                       load_shapes=load_shapes)
+
+        df_1 = self.build_from_folder(folder_1, folder_tag="folder_1")
+        df_2 = self.build_from_folder(folder_2, folder_tag="folder_2")
 
         self._df = pd.concat([df_1, df_2], ignore_index=True)
         logger.info(f"Dual-folder registries complete: {len(df_1)} + {len(df_2)} files")
@@ -300,10 +380,13 @@ class DatasetRegistry:
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Split one volunteer's transitions rows into train and test sets.
 
-        The draw is stratified per (modality, transition value): each group
-        contributes ``max(1, floor(test_fraction * n))`` rows to the test
-        set and the remainder to the training set. Rows keep every registry
-        column, so downstream bucketing uses class labels only.
+        The draw is stratified per transition value and its unit is an
+        IMU/MMG pair: each group contributes
+        ``max(1, ceil(test_fraction * n))`` pairs to the test set and the
+        remainder to the training set. Rounding up guarantees every
+        transition value reaches at least ``test_fraction`` of its pairs
+        rather than falling short of it. Rows keep every registry column,
+        so downstream bucketing uses class labels only.
         """
         if not 0 < test_fraction < 1:
             raise ValueError("test_fraction must be between 0 and 1.")
@@ -314,31 +397,32 @@ class DatasetRegistry:
                 f"No valid transitions rows found for volunteer {volunteer_id}."
             )
 
+        pairs = build_modality_pairs(candidates)
         rng = np.random.default_rng(seed)
-        train_parts: list[pd.DataFrame] = []
-        test_parts: list[pd.DataFrame] = []
-        group_keys = [RegistryColumns.MODALITY, RegistryColumns.TRANSITION_INFO]
+        train_keys: list[int] = []
+        test_keys: list[int] = []
 
-        for (modality, value), group in candidates.groupby(group_keys, sort=True):
-            group = group.sort_values(RegistryColumns.FILE_PATH)
+        for value, group in pairs.groupby(RegistryColumns.TRANSITION_INFO, sort=True):
+            group = group.sort_values(PairColumns.PAIR_KEY)
             if len(group) < 2:
                 raise ValueError(
-                    f"Volunteer {volunteer_id}, {modality} transition "
-                    f"'{value}' has only {len(group)} row(s); at least 2 "
-                    "are required to form a train/test split."
+                    f"Volunteer {volunteer_id}, transition '{value}' has only "
+                    f"{len(group)} pair(s); at least 2 are required to form a "
+                    "train/test split."
                 )
-            n_test = max(1, int(np.floor(len(group) * test_fraction)))
-            test_idx = rng.choice(
-                group.index.to_numpy(), size=n_test, replace=False
-            )
-            test_parts.append(group.loc[np.sort(test_idx)])
-            train_parts.append(group.drop(index=pd.Index(test_idx)))
+            n_test = max(1, int(np.ceil(len(group) * test_fraction)))
+            positions = rng.permutation(len(group))
+            test_keys.extend(group.index[positions[:n_test]])
+            train_keys.extend(group.index[positions[n_test:]])
 
-        train_df = pd.concat(train_parts, ignore_index=True)
-        test_df = pd.concat(test_parts, ignore_index=True)
+        train_df = select_pair_rows(candidates, pairs.loc[sorted(train_keys)])
+        test_df = select_pair_rows(candidates, pairs.loc[sorted(test_keys)])
         logger.info(
-            "Transitions split for %s (seed=%d): %d train rows, %d test rows",
-            volunteer_id, seed, len(train_df), len(test_df),
+            "Transitions split for %s (seed=%d): %d train rows / %d examples, "
+            "%d test rows / %d examples",
+            volunteer_id, seed,
+            len(train_df), train_df[RegistryColumns.SAMPLES].sum(),
+            len(test_df), test_df[RegistryColumns.SAMPLES].sum(),
         )
         return train_df, test_df
 
@@ -349,12 +433,13 @@ class DatasetRegistry:
         ratio: float = 1.10,
         seed: int = 42,
     ) -> pd.DataFrame:
-        """Sample just_states rows to match transitions counts per bucket.
+        """Sample just_states rows to cap examples against transitions.
 
-        For each (volunteer, class label, modality) bucket present in
-        ``transitions_df``, ``floor(ratio * transitions count)`` rows are
-        drawn at random from ``just_states_df``. If fewer rows are
-        available, all of them are used and a warning is logged.
+        For each (volunteer, class label) bucket, whole IMU/MMG pairs are
+        drawn at random until adding another would exceed
+        ``floor(ratio * transitions examples)``. The cap counts individual
+        examples, not files: a just_states file holds far more examples than
+        a transitions file, so a file-count cap would not bound imbalance.
         """
         if ratio <= 0:
             raise ValueError("ratio must be positive.")
@@ -364,56 +449,53 @@ class DatasetRegistry:
         if transitions_df.empty or pool.empty:
             return pool.iloc[0:0].copy()
 
+        transition_pairs = build_modality_pairs(transitions_df)
+        pool_pairs = build_modality_pairs(pool)
         rng = np.random.default_rng(seed)
-        bucket_keys = [
-            RegistryColumns.VOLUNTEER_ID,
-            RegistryColumns.CLASS_LABEL,
-            RegistryColumns.MODALITY,
-        ]
-        parts: list[pd.DataFrame] = []
+        bucket_keys = [RegistryColumns.VOLUNTEER_ID, RegistryColumns.CLASS_LABEL]
+        chosen_keys: list[int] = []
 
-        for key, count in (
-            transitions_df.groupby(bucket_keys).size().items()
-        ):
-            volunteer, label, modality = cast(tuple, key)
-            target = int(np.floor(count * ratio))
-            if target == 0:
+        demand = transition_pairs.groupby(bucket_keys)[PairColumns.SAMPLES].sum()
+        for key, examples in demand.items():
+            volunteer, label = cast(tuple, key)
+            budget = int(np.floor(examples * ratio))
+            if budget <= 0:
                 continue
-            available = pool[
-                (pool[RegistryColumns.VOLUNTEER_ID] == volunteer)
-                & (pool[RegistryColumns.CLASS_LABEL] == label)
-                & (pool[RegistryColumns.MODALITY] == modality)
-            ].sort_values(RegistryColumns.FILE_PATH)
-            if len(available) <= target:
-                if len(available) < target:
-                    logger.warning(
-                        "just_states shortfall for %s class %d %s: wanted "
-                        "%d rows, only %d available",
-                        volunteer, label, modality, target, len(available),
-                    )
-                parts.append(available)
+            available = pool_pairs[
+                (pool_pairs[RegistryColumns.VOLUNTEER_ID] == volunteer)
+                & (pool_pairs[RegistryColumns.CLASS_LABEL] == label)
+            ].sort_values(PairColumns.PAIR_KEY)
+            if available.empty:
+                logger.warning(
+                    "No just_states data for %s class %d", volunteer, label
+                )
                 continue
-            chosen = rng.choice(
-                available.index.to_numpy(), size=target, replace=False
-            )
-            parts.append(available.loc[np.sort(chosen)])
 
-        if not parts:
+            used = 0
+            for position in rng.permutation(len(available)):
+                candidate = available.iloc[int(position)]
+                size = int(candidate[PairColumns.SAMPLES])
+                if used + size > budget:
+                    continue
+                chosen_keys.append(cast(int, candidate.name))
+                used += size
+            if used < budget:
+                logger.debug(
+                    "just_states cap not filled for %s class %d: %d of %d "
+                    "examples", volunteer, label, used, budget,
+                )
+
+        if not chosen_keys:
             return pool.iloc[0:0].copy()
-        result = pd.concat(parts, ignore_index=True)
+        result = select_pair_rows(pool, pool_pairs.loc[sorted(chosen_keys)])
         logger.info(
-            "Matched %d just_states rows to %d transitions rows (ratio=%.2f)",
-            len(result), len(transitions_df), ratio,
+            "Matched %d just_states examples to %d transitions examples "
+            "(cap ratio=%.2f)",
+            result[RegistryColumns.SAMPLES].sum(),
+            transitions_df[RegistryColumns.SAMPLES].sum(),
+            ratio,
         )
         return result
-
-    def get_transition_samples(self, df: pd.DataFrame) -> pd.DataFrame:
-        logger.debug(f"Extracting transition samples from {len(df)} samples")
-        filtered = df[
-            df[RegistryColumns.TRANSITION_INFO].notna()
-        ].reset_index(drop=True)
-        logger.debug(f"Found {len(filtered)} transition samples")
-        return filtered
 
     def summary(self, df: pd.DataFrame) -> pd.DataFrame:
         cols = [
@@ -434,28 +516,21 @@ class DatasetRegistry:
     def _process_file(
         self,
         file_path: Path,
-        load_shapes: bool,
         folder_tag: str,
     ) -> Optional[dict]:
         try:
-            
-
             metadata: FileMetadata = self._parser.parse(str(file_path))
-            logger.debug(f"Parsed {file_path.name}: {metadata.volunteer_id} {metadata.modality} {metadata.activity_class}")
-            record = self._metadata_to_record(metadata, folder_tag)
-
-            if load_shapes:
-                shape = self._load_shape(file_path)
-                
-                if shape is not None:
-                    record.update(self._shape_to_record(shape))
-                    logger.debug(f"Shape loaded for {file_path.name}: {shape}")
-
-            return record
-
         except ValueError as exc:
             logger.warning(f"Skipping '{file_path.name}': {exc}")
             return None
+
+        array_info = self._read_array_info(file_path)
+        if array_info is None:
+            return None
+
+        record = self._metadata_to_record(metadata, folder_tag)
+        record.update(array_info)
+        return record
 
     @staticmethod
     def _metadata_to_record(metadata: FileMetadata, folder_tag: str) -> dict:
@@ -470,38 +545,36 @@ class DatasetRegistry:
         }
 
     @staticmethod
-    def _load_shape(file_path: Path) -> Optional[tuple]:
+    def _read_array_info(file_path: Path) -> Optional[dict]:
+        """Measure a file without materialising it.
+
+        ``file_size_bytes`` comes from the filesystem and ``array_nbytes``
+        from the .npy header, so neither figure is estimated from shapes.
+        ``resident_bytes`` re-costs the same element count as float32,
+        which is how arrays are held in memory.
+        """
         try:
-            import numpy as np
             array = np.load(file_path, mmap_mode="r", allow_pickle=False)
-            return tuple(array.shape)
         except Exception as exc:
-            print(f"[DatasetRegistry] Could not read shape of '{file_path}': {exc}")
+            logger.warning(f"Could not read array header of '{file_path}': {exc}")
             return None
 
-    @staticmethod
-    def _shape_to_record(shape: tuple) -> dict:
-        """
-        Shapes are (samples, ..., height, width); any axes between the
-        leading sample axis and the trailing two spatial axes are folded
-        into a single channel count (see datasets.py:_to_tensor).
-        """
-        if len(shape) < 3:
-            return {}
-        samples = shape[0]
-        no_windows = shape[1]
-        width, channels = shape[-2], shape[-1]
-        if len(shape) > 4:
-            height = shape[2]
-        else:
-            height = 1
-            
+        shape = tuple(int(dim) for dim in array.shape)
+        if len(shape) < 2:
+            logger.warning(
+                f"Skipping '{file_path.name}': expected a leading example "
+                f"axis plus at least one feature axis, got shape {shape}"
+            )
+            return None
+
+        nbytes = int(array.nbytes)
+        elements = nbytes // array.dtype.itemsize
         return {
-            RegistryColumns.WIDTH: width,
-            RegistryColumns.HEIGHT: height,
-            RegistryColumns.CHANNELS: channels,
-            RegistryColumns.SAMPLES: samples,
-            RegistryColumns.NO_WINDOWS: no_windows,
+            RegistryColumns.SAMPLES: shape[0],
+            RegistryColumns.ARRAY_SHAPE: shape,
+            RegistryColumns.FILE_SIZE_BYTES: os.path.getsize(file_path),
+            RegistryColumns.ARRAY_NBYTES: nbytes,
+            RegistryColumns.RESIDENT_BYTES: elements * FLOAT32_ITEMSIZE,
         }
 
     @staticmethod
@@ -509,22 +582,12 @@ class DatasetRegistry:
         col = RegistryColumns
         dtype_map: dict[str, np.dtype] = {
             col.CLASS_LABEL: np.dtype("int8"),
+            col.SAMPLES: np.dtype("int64"),
+            col.FILE_SIZE_BYTES: np.dtype("int64"),
+            col.ARRAY_NBYTES: np.dtype("int64"),
+            col.RESIDENT_BYTES: np.dtype("int64"),
         }
         for column, dtype in dtype_map.items():
             if column in df.columns:
                 df[column] = df[column].astype(dtype)
-        return df
-
-    @staticmethod
-    def _add_file_size_column(df: pd.DataFrame) -> pd.DataFrame:
-        """Add the actual on-disk size of each registered file in bytes.
-
-        Shape-based estimates are unsuitable here: they can omit dimensions,
-        assume the wrong dtype, and do not include the NumPy file header.
-        """
-        if df.empty:
-            df["file_size_bytes"] = pd.Series(dtype="int64")
-            return df
-
-        df["file_size_bytes"] = df[RegistryColumns.FILE_PATH].apply(os.path.getsize)
         return df

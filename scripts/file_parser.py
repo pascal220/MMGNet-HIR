@@ -19,19 +19,14 @@ logger = logging.getLogger(__name__)
 
 VALID_MODALITIES = {"MMG", "IMU"}
 
-# Note: "stair_up"/"stair_down" (IMU files) and "stairs_up"/"stairs_down"
-# (MMG files) both occur in the dataset - the source data itself is
-# inconsistent about the singular/plural spelling.
 VALID_CLASSES = {
     "sit", "stand", "walking",
     "sit_to_stand", "stand_to_sit",
-    "stair_up", "stair_down",
     "stairs_up", "stairs_down",
 }
 
 TRANSITION_CLASSES = {
     "sit_to_stand", "stand_to_sit",
-    "stair_up", "stair_down",
     "stairs_up", "stairs_down",
 }
 

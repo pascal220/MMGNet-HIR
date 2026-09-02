@@ -1,260 +1,303 @@
 """
-memory_manager.py  
+memory_manager.py
 
-Folder 1 maps directly to the core cache (always resident).
-Folder 2 is loaded dynamically up to the remaining RAM budget.
+Plans which of the selected files can stay resident within a single memory
+budget, then loads them as float32 tensors.
+
+Data carrying transition information is mandatory and is reserved first.
+Whatever budget remains is divided equally between the selected volunteers
+and spent on data without transition information, which is dropped when it
+does not fit.
 """
 
 import logging
-import threading
-from collections import OrderedDict
 from dataclasses import dataclass, field
 
 import numpy as np
+import pandas as pd
+import torch
+from torch import Tensor
+
+from dataset_registry import (
+    PairColumns,
+    RegistryColumns,
+    build_modality_pairs,
+    select_pair_rows,
+)
 
 logger = logging.getLogger(__name__)
 
 BYTES_PER_GB = 1024 ** 3
 
+TRAIN = "train"
+TEST = "test"
 
-@dataclass
-class CachedEntry:
-    array: np.ndarray
-    size_bytes: int
-    is_core: bool = False
-
-    @classmethod
-    def from_array(cls, array: np.ndarray, is_core: bool = False) -> "CachedEntry":
-        return cls(array=array, size_bytes=array.nbytes, is_core=is_core)
+# Optional data follows the transitions split when one volunteer supplies both.
+SPLIT_WEIGHTS = {TRAIN: 0.9, TEST: 0.1}
 
 
 @dataclass
 class MemoryBudget:
-    """
-    Tracks RAM usage for dual-folder loading.
-
-    Parameters
-    ----------
-    total_budget_gb : float
-        Total available RAM in gigabytes (32 or 64 — specifiable).
-    folder_1_size_gb : float
-        Actual size of folder 1 data in gigabytes (always loaded).
-    """
+    """A single limit covering every array held in memory."""
 
     total_budget_gb: float
-    folder_1_size_gb: float
-    _used_dynamic_bytes: int = field(default=0, init=False)
+
+    def __post_init__(self) -> None:
+        if self.total_budget_gb <= 0:
+            raise ValueError("total_budget_gb must be positive.")
 
     @property
     def total_budget_bytes(self) -> int:
         return int(self.total_budget_gb * BYTES_PER_GB)
 
-    @property
-    def folder_1_bytes(self) -> int:
-        return int(self.folder_1_size_gb * BYTES_PER_GB)
+    def summary(self) -> str:
+        return f"MemoryBudget | Total: {self.total_budget_gb:.2f} GiB"
+
+
+@dataclass
+class ResidencyPlan:
+    """The outcome of fitting the selected data into the budget."""
+
+    optional_train: pd.DataFrame
+    optional_test: pd.DataFrame
+    mandatory_bytes: int
+    optional_bytes: int
+    budget_bytes: int
+    volunteer_bytes: dict[tuple[str, str], int] = field(default_factory=dict)
+    dropped_pairs: int = 0
+    dropped_examples: int = 0
 
     @property
-    def folder_2_budget_bytes(self) -> int:
-        """Remaining bytes available for folder 2 (dynamic) data."""
-        return max(0, self.total_budget_bytes - self.folder_1_bytes)
-
-    @property
-    def used_dynamic_bytes(self) -> int:
-        return self._used_dynamic_bytes
-
-    @property
-    def available_dynamic_bytes(self) -> int:
-        return self.folder_2_budget_bytes - self._used_dynamic_bytes
-
-    def can_fit(self, size_bytes: int) -> bool:
-        return size_bytes <= self.available_dynamic_bytes
-
-    def allocate(self, size_bytes: int) -> None:
-        self._used_dynamic_bytes += size_bytes
-
-    def release(self, size_bytes: int) -> None:
-        self._used_dynamic_bytes = max(0, self._used_dynamic_bytes - size_bytes)
-
-    def utilisation_pct(self) -> float:
-        if self.folder_2_budget_bytes == 0:
-            return 0.0
-        return (self._used_dynamic_bytes / self.folder_2_budget_bytes) * 100.0
+    def total_bytes(self) -> int:
+        return self.mandatory_bytes + self.optional_bytes
 
     def summary(self) -> str:
-        summary_str = (
-            f"MemoryBudget | Total: {self.total_budget_gb:.1f} GB | "
-            f"Folder 1 (core): {self.folder_1_size_gb:.2f} GB | "
-            f"Folder 2 budget: {self.folder_2_budget_bytes / BYTES_PER_GB:.2f} GB | "
-            f"Folder 2 used: {self._used_dynamic_bytes / BYTES_PER_GB:.2f} GB "
-            f"({self.utilisation_pct():.1f}%)"
-        )
-        logger.debug(summary_str)
-        return summary_str
+        lines = [
+            "[ResidencyPlan]",
+            f"  Budget            : {self.budget_bytes / BYTES_PER_GB:.2f} GiB",
+            f"  Transitions (kept): {self.mandatory_bytes / BYTES_PER_GB:.2f} GiB",
+            f"  Just states (kept): {self.optional_bytes / BYTES_PER_GB:.2f} GiB",
+            f"  Total resident    : {self.total_bytes / BYTES_PER_GB:.2f} GiB "
+            f"({self.total_bytes / self.budget_bytes * 100:.1f}%)",
+            f"  Dropped           : {self.dropped_pairs} pairs / "
+            f"{self.dropped_examples} examples",
+        ]
+        for (volunteer, split), size in sorted(self.volunteer_bytes.items()):
+            lines.append(
+                f"    {volunteer} {split:<5}: {size / BYTES_PER_GB:.3f} GiB optional"
+            )
+        return "\n".join(lines)
 
 
-class LRUArrayCache:
+def plan_resident_set(
+    mandatory_train: pd.DataFrame,
+    mandatory_test: pd.DataFrame,
+    optional_train: pd.DataFrame,
+    optional_test: pd.DataFrame,
+    budget: MemoryBudget,
+    seed: int = 42,
+) -> ResidencyPlan:
+    """Decide which optional rows fit, before any array is loaded.
+
+    Planning uses the measured ``resident_bytes`` of each file, so the
+    result is known without touching the data.
     """
-    Thread-safe LRU cache.
+    col = RegistryColumns
+    budget_bytes = budget.total_budget_bytes
+    mandatory_bytes = int(
+        mandatory_train[col.RESIDENT_BYTES].sum()
+        + mandatory_test[col.RESIDENT_BYTES].sum()
+    )
 
-    Folder 1 files → permanent core (never evicted).
-    Folder 2 files → dynamic LRU (evicted when budget exceeded).
+    if mandatory_bytes > budget_bytes:
+        raise MemoryError(
+            "Transition data alone needs "
+            f"{mandatory_bytes / BYTES_PER_GB:.2f} GiB but the budget is "
+            f"{budget.total_budget_gb:.2f} GiB. Raise total_budget_gb: this "
+            "data is mandatory and is never dropped."
+        )
 
-    Parameters
-    ----------
-    budget : MemoryBudget
-        Memory budget tracker.
+    remaining = budget_bytes - mandatory_bytes
+    sources = {TRAIN: optional_train, TEST: optional_test}
+    pairs = {split: build_modality_pairs(df) for split, df in sources.items()}
+
+    buckets: dict[tuple[str, str], pd.DataFrame] = {}
+    for split, pair_df in pairs.items():
+        if pair_df.empty:
+            continue
+        for volunteer, group in pair_df.groupby(col.VOLUNTEER_ID):
+            buckets[(str(volunteer), split)] = group
+
+    if not buckets:
+        return ResidencyPlan(
+            optional_train=optional_train.iloc[0:0].copy(),
+            optional_test=optional_test.iloc[0:0].copy(),
+            mandatory_bytes=mandatory_bytes,
+            optional_bytes=0,
+            budget_bytes=budget_bytes,
+        )
+
+    allocations = _allocate_by_volunteer(buckets, remaining)
+    rng = np.random.default_rng(seed)
+    kept: dict[str, list[pd.DataFrame]] = {TRAIN: [], TEST: []}
+    volunteer_bytes: dict[tuple[str, str], int] = {}
+    kept_keys: set = set()
+
+    for bucket_key in sorted(buckets):
+        group = buckets[bucket_key].sort_values(PairColumns.PAIR_KEY)
+        quota = allocations[bucket_key]
+        used = 0
+        chosen: list[int] = []
+        for position in rng.permutation(len(group)):
+            candidate = group.iloc[int(position)]
+            size = int(candidate[PairColumns.PAIR_BYTES])
+            if used + size > quota:
+                continue
+            chosen.append(int(candidate.name))
+            used += size
+        volunteer_bytes[bucket_key] = used
+        kept_keys.update(chosen)
+        if chosen:
+            kept[bucket_key[1]].append(group.loc[sorted(chosen)])
+
+    kept_pairs = {
+        split: (
+            pd.concat(parts, ignore_index=False)
+            if parts
+            else pairs[split].iloc[0:0]
+        )
+        for split, parts in kept.items()
+    }
+    result = {
+        split: select_pair_rows(sources[split], kept_pairs[split])
+        for split in (TRAIN, TEST)
+    }
+
+    optional_bytes = int(
+        sum(df[col.RESIDENT_BYTES].sum() for df in result.values())
+    )
+    offered = pd.concat([pairs[TRAIN], pairs[TEST]], ignore_index=True)
+    kept_examples = int(
+        sum(df[col.SAMPLES].sum() for df in result.values()) // 2
+    )
+    plan = ResidencyPlan(
+        optional_train=result[TRAIN],
+        optional_test=result[TEST],
+        mandatory_bytes=mandatory_bytes,
+        optional_bytes=optional_bytes,
+        budget_bytes=budget_bytes,
+        volunteer_bytes=volunteer_bytes,
+        dropped_pairs=len(offered) - sum(len(df) for df in kept_pairs.values()),
+        dropped_examples=int(offered[PairColumns.SAMPLES].sum()) - kept_examples,
+    )
+    logger.info("%s", plan.summary())
+    return plan
+
+
+def _allocate_by_volunteer(
+    buckets: dict[tuple[str, str], pd.DataFrame],
+    remaining: int,
+) -> dict[tuple[str, str], int]:
+    """Split the leftover budget equally between volunteers.
+
+    A volunteer supplying both splits divides its share 90/10, matching the
+    transitions split. Volunteers wanting less than their share release the
+    difference to the others, so no budget is left unused while data is
+    still being dropped.
+    """
+    volunteers = sorted({key[0] for key in buckets})
+    weights = {
+        key: (
+            SPLIT_WEIGHTS[key[1]]
+            if sum(1 for other in buckets if other[0] == key[0]) > 1
+            else 1.0
+        )
+        / len(volunteers)
+        for key in buckets
+    }
+    demands = {
+        key: int(group[PairColumns.PAIR_BYTES].sum())
+        for key, group in buckets.items()
+    }
+
+    allocations: dict[tuple[str, str], int] = {}
+    pending = set(buckets)
+    available = float(remaining)
+
+    while pending:
+        weight_total = sum(weights[key] for key in pending)
+        if weight_total <= 0:
+            break
+        satisfied = [
+            key
+            for key in pending
+            if demands[key] <= available * weights[key] / weight_total
+        ]
+        if not satisfied:
+            for key in pending:
+                allocations[key] = int(available * weights[key] / weight_total)
+            break
+        for key in satisfied:
+            allocations[key] = demands[key]
+            available -= demands[key]
+            pending.discard(key)
+
+    return allocations
+
+
+class TensorStore:
+    """Holds every resident array as a float32 tensor, keyed by file path.
+
+    Arrays keep their native shape: IMU stays (examples, windows, time,
+    channels) and MMG stays (examples, windows, scales, time, channels).
     """
 
     def __init__(self, budget: MemoryBudget):
         self._budget = budget
-        self._core: dict[str, CachedEntry] = {}
-        self._dynamic: OrderedDict[str, CachedEntry] = OrderedDict()
-        self._lock = threading.Lock()
+        self._tensors: dict[str, Tensor] = {}
+        self._resident_bytes = 0
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    @property
+    def resident_bytes(self) -> int:
+        return self._resident_bytes
 
-    def load_folder_1(self, file_paths: list[str]) -> None:
-        """
-        Load all folder 1 files into the permanent core cache.
+    def load(self, file_paths: list[str]) -> None:
+        """Load every planned file into memory as float32."""
+        unique_paths = sorted(set(file_paths))
+        total = len(unique_paths)
+        logger.info("Loading %d files into memory as float32", total)
 
-        Parameters
-        ----------
-        file_paths : list[str]
-            All file paths from folder 1 (post-balancing).
-        """
-        logger.info(f"Starting folder 1 core cache loading: {len(file_paths)} files")
-        total = len(file_paths)
-        loaded_bytes = 0
-        skipped_count = 0
-
-        for idx, path in enumerate(file_paths, start=1):
-            if path in self._core:
-                logger.debug(f"File already in core cache: {path}")
-                skipped_count += 1
+        for index, path in enumerate(unique_paths, start=1):
+            if path in self._tensors:
                 continue
+            # mmap avoids holding the float64 source in the heap.
+            array = np.load(path, mmap_mode="r", allow_pickle=False)
+            tensor = torch.from_numpy(np.asarray(array, dtype=np.float32))
+            size = tensor.nelement() * tensor.element_size()
 
-            logger.debug(f"Loading file {idx}/{total}: {path}")
-            array = np.load(path, allow_pickle=False)
-            entry = CachedEntry.from_array(array, is_core=True)
-            if loaded_bytes + entry.size_bytes > self._budget.total_budget_bytes:
+            if self._resident_bytes + size > self._budget.total_budget_bytes:
                 raise MemoryError(
-                    "Mandatory transition data exceeds the configured memory "
-                    f"budget while loading '{path}'. Required at least "
-                    f"{(loaded_bytes + entry.size_bytes) / BYTES_PER_GB:.2f} GB, "
-                    f"but only {self._budget.total_budget_gb:.2f} GB is available."
+                    f"Loading '{path}' would exceed the memory budget "
+                    f"({self._budget.total_budget_gb:.2f} GiB). The residency "
+                    "plan and the data on disk disagree."
                 )
-            self._core[path] = entry
-            loaded_bytes += entry.size_bytes
 
-            if idx % max(1, total // 10) == 0 or idx == total:
-                pct = (idx / total) * 100
-                gb_loaded = loaded_bytes / BYTES_PER_GB
+            self._tensors[path] = tensor
+            self._resident_bytes += size
+
+            if index % max(1, total // 10) == 0 or index == total:
                 logger.info(
-                    f"Folder 1 loading progress: {idx}/{total} ({pct:.0f}%) | "
-                    f"{gb_loaded:.2f} GB loaded"
+                    "Loading progress: %d/%d (%.0f%%) | %.2f GiB resident",
+                    index, total, index / total * 100,
+                    self._resident_bytes / BYTES_PER_GB,
                 )
 
-        core_size_gb = loaded_bytes / BYTES_PER_GB
         logger.info(
-            f"Folder 1 core cache ready: {len(self._core)} files | "
-            f"{core_size_gb:.2f} GB | {skipped_count} files already cached"
+            "Resident set ready: %d files | %.2f GiB of %.2f GiB budget",
+            len(self._tensors),
+            self._resident_bytes / BYTES_PER_GB,
+            self._budget.total_budget_gb,
         )
 
-    def get(self, file_path: str) -> np.ndarray:
-        """
-        Retrieve an array by file path via core or LRU dynamic cache.
-
-        Parameters
-        ----------
-        file_path : str
-            Path to the .npy file.
-
-        Returns
-        -------
-        np.ndarray
-        """
-        logger.debug(f"Getting array from cache: {file_path}")
-        with self._lock:
-            if file_path in self._core:
-                logger.debug("Found in core cache")
-                return self._core[file_path].array
-
-            if file_path in self._dynamic:
-                logger.debug("Found in dynamic cache, moving to end")
-                self._dynamic.move_to_end(file_path)
-                return self._dynamic[file_path].array
-
-            logger.debug("Not in cache, loading dynamically")
-            return self._load_dynamic(file_path)
-
-    def evict_all_dynamic(self) -> None:
-        """Evict all folder 2 dynamic cache entries."""
-        logger.info("Evicting all dynamic cache entries")
-        with self._lock:
-            evicted_size = sum(entry.size_bytes for entry in self._dynamic.values())
-            for entry in self._dynamic.values():
-                self._budget.release(entry.size_bytes)
-            evicted_count = len(self._dynamic)
-            self._dynamic.clear()
-        logger.info(
-            f"Folder 2 dynamic cache cleared: {evicted_count} files | "
-            f"{evicted_size / BYTES_PER_GB:.2f} GB freed"
-        )
-
-    def stats(self) -> dict:
-        logger.debug("Getting cache statistics")
-        with self._lock:
-            stats = {
-                "folder_1_files": len(self._core),
-                "folder_2_cached_files": len(self._dynamic),
-                "budget_summary": self._budget.summary(),
-            }
-        return stats
-
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    def _load_dynamic(self, file_path: str) -> np.ndarray:
-        logger.info(f"Loading dynamic file: {file_path}")
-        array = np.load(file_path, allow_pickle=False)
-        entry = CachedEntry.from_array(array, is_core=False)
-        logger.debug(f"Loaded array size: {entry.size_bytes / (1024**2):.2f} MB")
-
-        if entry.size_bytes > self._budget.folder_2_budget_bytes:
-            logger.error(
-                f"File '{file_path}' ({entry.size_bytes / BYTES_PER_GB:.3f} GB) "
-                f"exceeds entire folder 2 budget ({self._budget.folder_2_budget_bytes / BYTES_PER_GB:.2f} GB)"
-            )
-            raise MemoryError(
-                f"File '{file_path}' ({entry.size_bytes / BYTES_PER_GB:.3f} GB) "
-                f"exceeds the entire folder 2 budget "
-                f"({self._budget.folder_2_budget_bytes / BYTES_PER_GB:.2f} GB)."
-            )
-
-        evicted_count = 0
-        while not self._budget.can_fit(entry.size_bytes) and self._dynamic:
-            logger.debug("Budget full, evicting LRU entry")
-            self._evict_lru()
-            evicted_count += 1
-
-        if evicted_count > 0:
-            logger.info(f"Evicted {evicted_count} files to make space")
-
-        self._dynamic[file_path] = entry
-        self._dynamic.move_to_end(file_path)
-        self._budget.allocate(entry.size_bytes)
-        logger.info(
-            f"Dynamic cache: {len(self._dynamic)} files, "
-            f"{self._budget.used_dynamic_bytes / BYTES_PER_GB:.2f} / "
-            f"{self._budget.folder_2_budget_bytes / BYTES_PER_GB:.2f} GB used"
-        )
-
-        return array
-
-    def _evict_lru(self) -> None:
-        lru_path, lru_entry = self._dynamic.popitem(last=False)
-        self._budget.release(lru_entry.size_bytes)
-        logger.debug(f"Evicted LRU file: {lru_path} ({lru_entry.size_bytes / (1024**2):.2f} MB)")
+    def get(self, file_path: str) -> Tensor:
+        return self._tensors[file_path]
