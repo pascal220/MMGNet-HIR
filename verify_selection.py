@@ -1,4 +1,4 @@
-"""Verification harness for selection, residency planning, and datasets."""
+"""Verification harness for sample-level selection, residency and tensors."""
 
 import sys
 from pathlib import Path
@@ -10,18 +10,21 @@ import pandas as pd
 import torch
 
 from dataset_registry import (
+    LABEL_TO_CLASS,
+    MODALITY_PATH_COLUMN,
     VALID_TRANSITION_VALUES,
     DatasetRegistry,
-    PairColumns,
     RegistryColumns as C,
-    build_modality_pairs,
+    SampleColumns as S,
+    build_sample_table,
+    sample_bytes,
 )
-from datasets import SingleModalityDataset
-from main import ExperimentConfig, _select_experiment_data
-from memory_manager import BYTES_PER_GB, MemoryBudget, TensorStore, plan_resident_set
+from datasets import ModalityTensors, SingleModalityDataset
+from main import ExperimentConfig, _build_bundles, _select_experiment_data
+from memory_manager import BYTES_PER_GB, MemoryBudget, plan_resident_set
 
-GIB = BYTES_PER_GB
 CHECKS: list[str] = []
+STRATA = [C.VOLUNTEER_ID, C.CLASS_LABEL, C.TRANSITION_INFO]
 
 
 def check(condition: bool, message: str) -> None:
@@ -30,7 +33,11 @@ def check(condition: bool, message: str) -> None:
     CHECKS.append(message)
 
 
-def run_pipeline(config: ExperimentConfig, registry, f1, f2):
+def sample_keys(df: pd.DataFrame) -> set:
+    return set(zip(df[S.PAIR_KEY], df[S.SAMPLE_INDEX]))
+
+
+def run_pipeline(config, registry, f1, f2):
     selected = _select_experiment_data(registry, f1, f2, config)
     budget = MemoryBudget(total_budget_gb=config.total_budget_gb)
     plan = plan_resident_set(
@@ -46,136 +53,160 @@ def run_pipeline(config: ExperimentConfig, registry, f1, f2):
     return selected, plan, train, test, budget
 
 
-def verify_common(label, config, selected, plan, train, test):
+def verify_selection(label, config, selected, plan, train, test):
     print(f"\n=== {label} ===")
     print(plan.summary())
 
+    check(plan.total_bytes <= plan.budget_bytes, f"{label}: planned bytes within budget")
     check(
-        plan.total_bytes <= plan.budget_bytes,
-        f"{label}: resident bytes within budget",
+        plan.total_bytes == sample_bytes(train) + sample_bytes(test),
+        f"{label}: plan totals match the kept sample tables",
     )
 
-    mandatory_paths = set(selected.mandatory_train[C.FILE_PATH]) | set(
-        selected.mandatory_test[C.FILE_PATH]
-    )
-    kept_paths = set(train[C.FILE_PATH]) | set(test[C.FILE_PATH])
+    mandatory = sample_keys(selected.mandatory_train) | sample_keys(selected.mandatory_test)
+    kept = sample_keys(train) | sample_keys(test)
+    check(mandatory <= kept, f"{label}: no transition sample was dropped")
+
     check(
-        mandatory_paths <= kept_paths,
-        f"{label}: no transitions row was dropped",
+        not (sample_keys(train) & sample_keys(test)),
+        f"{label}: train and test are disjoint at sample level",
+    )
+    check(
+        len(sample_keys(train)) == len(train)
+        and len(sample_keys(test)) == len(test),
+        f"{label}: no sample is selected twice",
     )
 
     transitions = pd.concat([train, test])
     transitions = transitions[transitions[C.FOLDER] == "folder_1"]
     check(
         transitions[C.TRANSITION_INFO].isin(VALID_TRANSITION_VALUES).all(),
-        f"{label}: every transitions row has a valid marker",
+        f"{label}: every transition sample has a valid marker",
     )
 
-    check(
-        not (set(train[C.FILE_PATH]) & set(test[C.FILE_PATH])),
-        f"{label}: no file appears in both train and test",
-    )
-
-    for name, df in (("train", train), ("test", test)):
-        pairs = build_modality_pairs(df)
-        check(
-            len(pairs) * 2 == len(df),
-            f"{label}: every {name} recording keeps both IMU and MMG",
-        )
-
+    # The 1.1x cap is counted in samples, per (volunteer, class).
     for split, df in (("train", train), ("test", test)):
         optional = df[df[C.FOLDER] == "folder_2"]
-        mandatory = df[df[C.FOLDER] == "folder_1"]
-        for volunteer, group in optional.groupby(C.VOLUNTEER_ID):
-            transitions_examples = mandatory[
-                (mandatory[C.VOLUNTEER_ID] == volunteer)
-                & (mandatory[C.MODALITY] == "IMU")
-            ][C.SAMPLES].sum()
-            optional_examples = group[group[C.MODALITY] == "IMU"][C.SAMPLES].sum()
-            check(
-                optional_examples
-                <= np.floor(transitions_examples * config.just_states_ratio) * 7,
-                f"{label}: {split} {volunteer} respects the example cap",
-            )
-
-    sizes = [v for v in plan.volunteer_bytes.values() if v > 0]
-    if len(sizes) > 1:
-        spread = (max(sizes) - min(sizes)) / max(sizes)
-        print(f"  per-volunteer optional spread: {spread:.1%}")
-
-
-def verify_cap_in_examples(registry, f1, f2, config):
-    selected = _select_experiment_data(registry, f1, f2, config)
-    for split, trans, opt in (
-        ("train", selected.mandatory_train, selected.optional_train),
-        ("test", selected.mandatory_test, selected.optional_test),
-    ):
-        if opt.empty:
+        if optional.empty:
             continue
-        imu_trans = trans[trans[C.MODALITY] == "IMU"]
-        imu_opt = opt[opt[C.MODALITY] == "IMU"]
-        demand = imu_trans.groupby([C.VOLUNTEER_ID, C.CLASS_LABEL])[C.SAMPLES].sum()
-        supply = imu_opt.groupby([C.VOLUNTEER_ID, C.CLASS_LABEL])[C.SAMPLES].sum()
+        demand = df[df[C.FOLDER] == "folder_1"].groupby(
+            [C.VOLUNTEER_ID, C.CLASS_LABEL]
+        ).size()
+        supply = optional.groupby([C.VOLUNTEER_ID, C.CLASS_LABEL]).size()
         for key, got in supply.items():
             cap = int(np.floor(demand.get(key, 0) * config.just_states_ratio))
             check(
                 got <= cap,
-                f"1.1x cap in examples honoured for {key} ({got} <= {cap})",
+                f"{label}: {split} {key[0]}/{LABEL_TO_CLASS[int(key[1])]} "
+                f"kept {got} <= cap {cap}",
             )
 
 
-def verify_dataset(train, test, budget):
-    store = TensorStore(budget=budget)
-    store.load(train[C.FILE_PATH].tolist() + test[C.FILE_PATH].tolist())
+def verify_test_share(label, config, mandatory_train, mandatory_test):
+    """Every stratum must give at least test_fraction of its samples to test."""
+    everything = pd.concat([mandatory_train, mandatory_test])
+    per_stratum = everything.groupby(STRATA).size()
+    in_test = mandatory_test.groupby(STRATA).size().reindex(per_stratum.index).fillna(0)
 
-    measured = 0
-    for path in set(train[C.FILE_PATH]) | set(test[C.FILE_PATH]):
-        tensor = store.get(path)
-        measured += tensor.nelement() * tensor.element_size()
-        check(tensor.dtype == torch.float32, "arrays are cached as float32")
-    planned = int(
-        pd.concat([train, test]).drop_duplicates(C.FILE_PATH)[C.RESIDENT_BYTES].sum()
+    worst = 1.0
+    for key, total in per_stratum.items():
+        n_test = int(in_test[key])
+        expected = max(1, int(np.ceil(total * config.test_fraction)))
+        if n_test != expected:
+            raise AssertionError(
+                f"{label}: stratum {key} has {n_test} test samples, expected {expected}"
+            )
+        worst = min(worst, n_test / total)
+    check(
+        worst >= config.test_fraction,
+        f"{label}: every one of {len(per_stratum)} strata gives at least "
+        f"{config.test_fraction:.0%} to test (worst {worst:.1%})",
+    )
+
+    classes = set(mandatory_test[C.CLASS_LABEL].unique())
+    check(
+        classes == set(LABEL_TO_CLASS),
+        f"{label}: all seven classes are present in test",
     )
     check(
-        measured == planned,
-        f"planned resident bytes match reality ({measured} == {planned})",
+        set(mandatory_test[C.TRANSITION_INFO].unique()) == set(VALID_TRANSITION_VALUES),
+        f"{label}: all five transition values are present in test",
     )
 
-    expected_shapes = {"IMU": (4, 125, 6), "MMG": (4, 40, 125, 5)}
-    for modality, expected in expected_shapes.items():
-        subset = train[train[C.MODALITY] == modality]
-        dataset = SingleModalityDataset(subset, store)
+
+def verify_tensors(train, test, budget):
+    bundles = _build_bundles(train, test)
+    expected_shapes = {"imu": (4, 125, 6), "mmg": (4, 40, 125, 5)}
+
+    resident = sum(b.nbytes for b in bundles.values())
+    check(
+        resident <= budget.total_budget_bytes,
+        f"resident tensors {resident / BYTES_PER_GB:.2f} GiB within budget",
+    )
+
+    for name, bundle in bundles.items():
+        split, modality = name.split("_")
+        samples = train if split == "train" else test
+
+        check(bundle.data.dtype == torch.float32, f"{name} is float32")
         check(
-            len(dataset) == subset[C.SAMPLES].sum(),
-            f"{modality} dataset length equals its example count "
-            f"({len(dataset)})",
+            bundle.item_shape == expected_shapes[modality],
+            f"{name} item shape is {expected_shapes[modality]}",
         )
         check(
-            dataset.item_shape == expected,
-            f"{modality} item shape is {expected}, native and uncollapsed",
+            len(bundle.data) == len(samples),
+            f"{name} holds one row per selected sample ({len(bundle.data)})",
+        )
+        check(
+            len(bundle.labels) == len(bundle.data)
+            and len(bundle.metadata) == len(bundle.data),
+            f"{name} labels and metadata are row-aligned with the data",
+        )
+        check(
+            bundle.data.is_contiguous(),
+            f"{name} is a single contiguous tensor",
         )
 
-        index = len(dataset) // 3
-        tensor, label = dataset[index]
-        check(tuple(tensor.shape) == expected, f"{modality} item tensor shape")
+        dataset = SingleModalityDataset(bundle)
+        check(len(dataset) == len(bundle.data), f"{name} dataset length matches")
 
-        meta = dataset.get_metadata(index)
-        source = np.load(meta[C.FILE_PATH], mmap_mode="r")
-        reference = torch.from_numpy(
-            np.asarray(source[meta["example_index"]], dtype=np.float32)
-        )
+        # Rows must equal the source file slice, read independently.
+        rng = np.random.default_rng(0)
+        for index in rng.choice(len(bundle.data), size=min(5, len(bundle.data)), replace=False):
+            index = int(index)
+            meta = bundle.metadata.iloc[index]
+            source = np.load(meta["source_file"], mmap_mode="r")
+            reference = torch.from_numpy(
+                np.asarray(source[int(meta["source_sample_index"])], dtype=np.float32)
+            )
+            check(
+                torch.equal(bundle.data[index], reference),
+                f"{name} row {index} equals its source slice",
+            )
+            item, label = dataset[index]
+            check(torch.equal(item, reference), f"{name} dataset item {index} matches")
+            check(
+                int(label) == int(meta[C.CLASS_LABEL])
+                and meta["activity_class_name"] == LABEL_TO_CLASS[int(meta[C.CLASS_LABEL])],
+                f"{name} label and class name agree at row {index}",
+            )
+            check(
+                meta["source_file"] == samples.iloc[index][MODALITY_PATH_COLUMN[modality.upper()]],
+                f"{name} metadata points at the selected file at row {index}",
+            )
+
+    # The two modalities must describe the same events, row for row.
+    for split in ("train", "test"):
+        imu, mmg = bundles[f"{split}_imu"], bundles[f"{split}_mmg"]
         check(
-            torch.equal(tensor, reference),
-            f"{modality} item equals the source file slice (no averaging)",
+            imu.metadata[C.VOLUNTEER_ID].equals(mmg.metadata[C.VOLUNTEER_ID])
+            and imu.metadata["source_sample_index"].equals(
+                mmg.metadata["source_sample_index"]
+            )
+            and torch.equal(imu.labels, mmg.labels),
+            f"{split}: IMU and MMG rows describe the same events in the same order",
         )
-        check(
-            int(label) == meta[C.CLASS_LABEL],
-            f"{modality} label matches its registry row",
-        )
-        check(
-            {C.VOLUNTEER_ID, C.FOLDER, C.TRANSITION_INFO} <= set(meta),
-            f"{modality} metadata is preserved for analysis",
-        )
+    return bundles
 
 
 def main() -> None:
@@ -183,69 +214,51 @@ def main() -> None:
     f1, f2 = registry.build_dual_folder("data/transitions", "data/just_states")
     volunteers = sorted(f1[C.VOLUNTEER_ID].unique())
     print(f"Volunteers: {volunteers}")
+    print(
+        f"Whole dataset as float32: "
+        f"{sample_bytes(build_sample_table(pd.concat([f1, f2]))) / BYTES_PER_GB:.2f} GiB"
+    )
 
-    total_gib = (f1[C.RESIDENT_BYTES].sum() + f2[C.RESIDENT_BYTES].sum()) / GIB
-    print(f"Whole dataset resident as float32: {total_gib:.2f} GiB")
-
-    # Single volunteer, generous budget.
+    # Single volunteer: the 10% draw applies here.
     cfg = ExperimentConfig(
-        setup="same_volunteer",
-        same_volunteer_id=volunteers[0],
-        total_budget_gb=24.0,
+        setup="same_volunteer", same_volunteer_id=volunteers[0], total_budget_gb=24.0
     )
     selected, plan, train, test, budget = run_pipeline(cfg, registry, f1, f2)
-    verify_common(f"same_volunteer {volunteers[0]}", cfg, selected, plan, train, test)
-    verify_cap_in_examples(registry, f1, f2, cfg)
-    verify_dataset(train, test, budget)
+    verify_selection(f"same_volunteer {volunteers[0]}", cfg, selected, plan, train, test)
+    verify_test_share(
+        f"same_volunteer {volunteers[0]}", cfg,
+        selected.mandatory_train, selected.mandatory_test,
+    )
+    verify_tensors(train, test, budget)
 
-    # 10% test draw, stratified per transition value, applied to pairs.
-    trans = pd.concat([selected.mandatory_train, selected.mandatory_test])
-    trans_pairs = build_modality_pairs(trans)
-    test_pairs = build_modality_pairs(selected.mandatory_test)
-    for value, group in trans_pairs.groupby(C.TRANSITION_INFO):
-        n_test = len(test_pairs[test_pairs[C.TRANSITION_INFO] == value])
-        expected = max(1, int(np.ceil(len(group) * cfg.test_fraction)))
-        check(
-            n_test == expected,
-            f"transition '{value}': {n_test} test pairs of {len(group)}",
-        )
-        check(
-            n_test / len(group) >= cfg.test_fraction,
-            f"transition '{value}': test share {n_test / len(group):.1%} "
-            f"is at least {cfg.test_fraction:.0%}",
-        )
-
-    # Reproducibility.
     _, _, train2, test2, _ = run_pipeline(cfg, registry, f1, f2)
     check(
-        train[C.FILE_PATH].tolist() == train2[C.FILE_PATH].tolist()
-        and test[C.FILE_PATH].tolist() == test2[C.FILE_PATH].tolist(),
-        "seed 42 reproduces the same selection and residency plan",
+        sample_keys(train) == sample_keys(train2)
+        and sample_keys(test) == sample_keys(test2),
+        "seed 42 reproduces the same sample-level selection",
     )
 
-    # Multi-volunteer.
+    # Multi-volunteer: selection only, to keep the run quick.
     cfg2 = ExperimentConfig(
         setup="separate_volunteers",
         train_volunteer_count=len(volunteers) - 2,
         test_volunteer_count=2,
         total_budget_gb=24.0,
     )
-    selected2, plan2, train_m, test_m, budget2 = run_pipeline(cfg2, registry, f1, f2)
-    verify_common("separate_volunteers", cfg2, selected2, plan2, train_m, test_m)
+    selected2, plan2, train_m, test_m, _ = run_pipeline(cfg2, registry, f1, f2)
+    verify_selection("separate_volunteers", cfg2, selected2, plan2, train_m, test_m)
     check(
         not (set(train_m[C.VOLUNTEER_ID]) & set(test_m[C.VOLUNTEER_ID])),
         "no volunteer appears in both train and test",
     )
 
-    # Squeeze the budget so the drop path runs.
+    # Squeeze the budget so individual samples get dropped.
     mandatory_gib = (
-        selected2.mandatory_train[C.RESIDENT_BYTES].sum()
-        + selected2.mandatory_test[C.RESIDENT_BYTES].sum()
-    ) / GIB
+        sample_bytes(selected2.mandatory_train) + sample_bytes(selected2.mandatory_test)
+    ) / BYTES_PER_GB
     optional_gib = (
-        selected2.optional_train[C.RESIDENT_BYTES].sum()
-        + selected2.optional_test[C.RESIDENT_BYTES].sum()
-    ) / GIB
+        sample_bytes(selected2.optional_train) + sample_bytes(selected2.optional_test)
+    ) / BYTES_PER_GB
     cfg3 = ExperimentConfig(
         setup="separate_volunteers",
         train_volunteer_count=len(volunteers) - 2,
@@ -253,13 +266,11 @@ def main() -> None:
         total_budget_gb=round(mandatory_gib + optional_gib * 0.3, 3),
     )
     selected3, plan3, train_s, test_s, _ = run_pipeline(cfg3, registry, f1, f2)
-    verify_common(
-        f"squeezed budget {cfg3.total_budget_gb} GiB",
-        cfg3, selected3, plan3, train_s, test_s,
+    verify_selection(
+        f"squeezed {cfg3.total_budget_gb} GiB", cfg3, selected3, plan3, train_s, test_s
     )
-    check(plan3.dropped_pairs > 0, "the drop path engages under a tight budget")
+    check(plan3.dropped_samples > 0, "the drop path removes individual samples")
 
-    # Mandatory data alone over budget must fail loudly.
     try:
         plan_resident_set(
             selected3.mandatory_train,
@@ -269,12 +280,12 @@ def main() -> None:
             budget=MemoryBudget(total_budget_gb=max(0.01, mandatory_gib / 2)),
         )
     except MemoryError:
-        check(True, "transitions data over budget raises MemoryError")
+        check(True, "transition data over budget raises MemoryError")
     else:
         raise AssertionError("expected MemoryError for an impossible budget")
 
     print(f"\n{len(CHECKS)} checks passed:")
-    for item in CHECKS[:200]:
+    for item in CHECKS:
         print(f"  - {item}")
     print("\nALL CHECKS PASSED")
 

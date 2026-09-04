@@ -30,6 +30,8 @@ class RegistryColumns:
     CLASS_LABEL = "class_label"
     IS_TRANSITION_CLASS = "is_transition_class"
     TRANSITION_INFO = "transition_info"
+    # N, the leading array axis: IMU (N, 4, 125, 6), MMG (N, 4, 40, 125, 5).
+    # One sample is one training item, never a signal time step (that is 125).
     SAMPLES = "samples"
     ARRAY_SHAPE = "array_shape"
     FILE_SIZE_BYTES = "file_size_bytes"
@@ -68,6 +70,7 @@ MODALITIES: tuple[str, str] = ("IMU", "MMG")
 
 class PairColumns:
     PAIR_KEY = "pair_key"
+    # Shared by both modalities: a pair holds N samples in total, not 2N.
     SAMPLES = "samples"
     IMU_PATH = "imu_file_path"
     MMG_PATH = "mmg_file_path"
@@ -144,10 +147,93 @@ def build_modality_pairs(df: pd.DataFrame) -> pd.DataFrame:
     return pairs.reset_index().sort_values(PairColumns.PAIR_KEY).reset_index(drop=True)
 
 
-def select_pair_rows(df: pd.DataFrame, pairs: pd.DataFrame) -> pd.DataFrame:
-    """Return the registry rows belonging to the given pairs."""
-    paths = set(pairs[PairColumns.IMU_PATH]) | set(pairs[PairColumns.MMG_PATH])
-    return df[df[RegistryColumns.FILE_PATH].isin(paths)].reset_index(drop=True)
+# ---------------------------------------------------------------------------
+# Sample tables
+# ---------------------------------------------------------------------------
+
+class SampleColumns:
+    """Columns of a sample table: one row per selected sample."""
+
+    PAIR_KEY = PairColumns.PAIR_KEY
+    SAMPLE_INDEX = "sample_index"
+    SAMPLE_BYTES = "sample_bytes"
+    IMU_PATH = PairColumns.IMU_PATH
+    MMG_PATH = PairColumns.MMG_PATH
+
+
+# Which file a sample is read from, per modality.
+MODALITY_PATH_COLUMN: dict[str, str] = {
+    "IMU": SampleColumns.IMU_PATH,
+    "MMG": SampleColumns.MMG_PATH,
+}
+
+SAMPLE_TABLE_COLUMNS: list[str] = [
+    PairColumns.PAIR_KEY,
+    RegistryColumns.VOLUNTEER_ID,
+    RegistryColumns.CLASS_LABEL,
+    RegistryColumns.TRANSITION_INFO,
+    RegistryColumns.FOLDER,
+    PairColumns.IMU_PATH,
+    PairColumns.MMG_PATH,
+]
+
+
+def explode_pairs_to_samples(pairs: pd.DataFrame) -> pd.DataFrame:
+    """Expand each recording pair into one row per sample.
+
+    Selection happens sample-wise, so this table is the unit every later
+    step works with. Each row names both modality files and the shared
+    index into them, which keeps IMU and MMG on identical events.
+    """
+    out_columns = SAMPLE_TABLE_COLUMNS + [
+        SampleColumns.SAMPLE_INDEX,
+        SampleColumns.SAMPLE_BYTES,
+    ]
+    if pairs.empty:
+        return pd.DataFrame(columns=out_columns)
+
+    counts = pairs[PairColumns.SAMPLES].to_numpy(dtype=np.int64)
+    # Every sample of a file is the same size, so this division is exact.
+    per_sample = pairs[PairColumns.PAIR_BYTES].to_numpy(dtype=np.int64) // counts
+
+    samples = (
+        pairs[SAMPLE_TABLE_COLUMNS]
+        .loc[pairs.index.repeat(counts)]
+        .reset_index(drop=True)
+    )
+    samples[SampleColumns.SAMPLE_INDEX] = np.concatenate(
+        [np.arange(count, dtype=np.int64) for count in counts]
+    )
+    samples[SampleColumns.SAMPLE_BYTES] = np.repeat(per_sample, counts)
+    return samples
+
+
+def build_sample_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Turn registry rows into a sample table via their recording pairs."""
+    return explode_pairs_to_samples(build_modality_pairs(df))
+
+
+def exclude_samples(pool: pd.DataFrame, taken: pd.DataFrame) -> pd.DataFrame:
+    """Remove already-allocated samples so draws stay disjoint sample-wise."""
+    if pool.empty or taken.empty:
+        return pool.reset_index(drop=True)
+    used = set(
+        zip(taken[SampleColumns.PAIR_KEY], taken[SampleColumns.SAMPLE_INDEX])
+    )
+    keep = [
+        key not in used
+        for key in zip(
+            pool[SampleColumns.PAIR_KEY], pool[SampleColumns.SAMPLE_INDEX]
+        )
+    ]
+    return pool[keep].reset_index(drop=True)
+
+
+def sample_bytes(samples: pd.DataFrame) -> int:
+    """Total float32 residency of a sample table, both modalities."""
+    if samples.empty:
+        return 0
+    return int(samples[SampleColumns.SAMPLE_BYTES].sum())
 
 
 # ---------------------------------------------------------------------------
@@ -378,15 +464,17 @@ class DatasetRegistry:
         test_fraction: float = 0.10,
         seed: int = 42,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Split one volunteer's transitions rows into train and test sets.
+        """Split one volunteer's transition samples into train and test.
 
-        The draw is stratified per transition value and its unit is an
-        IMU/MMG pair: each group contributes
-        ``max(1, ceil(test_fraction * n))`` pairs to the test set and the
-        remainder to the training set. Rounding up guarantees every
-        transition value reaches at least ``test_fraction`` of its pairs
-        rather than falling short of it. Rows keep every registry column,
-        so downstream bucketing uses class labels only.
+        Strata are (volunteer, class, transition value) and the unit is a
+        single sample, so each stratum contributes
+        ``max(1, ceil(test_fraction * n))`` samples to the test set.
+        Rounding up guarantees every stratum reaches at least
+        ``test_fraction``, which in turn puts all seven classes and all
+        five transition values in the test set.
+
+        Both modality paths travel on every row, so IMU and MMG are split
+        on identical events.
         """
         if not 0 < test_fraction < 1:
             raise ValueError("test_fraction must be between 0 and 1.")
@@ -397,103 +485,103 @@ class DatasetRegistry:
                 f"No valid transitions rows found for volunteer {volunteer_id}."
             )
 
-        pairs = build_modality_pairs(candidates)
+        samples = build_sample_table(candidates)
         rng = np.random.default_rng(seed)
-        train_keys: list[int] = []
-        test_keys: list[int] = []
+        strata_keys = [
+            RegistryColumns.VOLUNTEER_ID,
+            RegistryColumns.CLASS_LABEL,
+            RegistryColumns.TRANSITION_INFO,
+        ]
+        train_positions: list[int] = []
+        test_positions: list[int] = []
 
-        for value, group in pairs.groupby(RegistryColumns.TRANSITION_INFO, sort=True):
-            group = group.sort_values(PairColumns.PAIR_KEY)
+        for stratum, group in samples.groupby(strata_keys, sort=True):
+            group = group.sort_values(
+                [SampleColumns.PAIR_KEY, SampleColumns.SAMPLE_INDEX]
+            )
             if len(group) < 2:
                 raise ValueError(
-                    f"Volunteer {volunteer_id}, transition '{value}' has only "
-                    f"{len(group)} pair(s); at least 2 are required to form a "
-                    "train/test split."
+                    f"Stratum {stratum} holds only {len(group)} sample(s); at "
+                    "least 2 are required to form a train/test split."
                 )
             n_test = max(1, int(np.ceil(len(group) * test_fraction)))
-            positions = rng.permutation(len(group))
-            test_keys.extend(group.index[positions[:n_test]])
-            train_keys.extend(group.index[positions[n_test:]])
+            positions = group.index.to_numpy()[rng.permutation(len(group))]
+            test_positions.extend(positions[:n_test])
+            train_positions.extend(positions[n_test:])
 
-        train_df = select_pair_rows(candidates, pairs.loc[sorted(train_keys)])
-        test_df = select_pair_rows(candidates, pairs.loc[sorted(test_keys)])
+        train_df = samples.loc[sorted(train_positions)].reset_index(drop=True)
+        test_df = samples.loc[sorted(test_positions)].reset_index(drop=True)
         logger.info(
-            "Transitions split for %s (seed=%d): %d train rows / %d examples, "
-            "%d test rows / %d examples",
-            volunteer_id, seed,
-            len(train_df), train_df[RegistryColumns.SAMPLES].sum(),
-            len(test_df), test_df[RegistryColumns.SAMPLES].sum(),
+            "Transitions split for %s (seed=%d): %d train samples / "
+            "%d test samples across %d strata",
+            volunteer_id, seed, len(train_df), len(test_df),
+            samples.groupby(strata_keys, sort=False).ngroups,
         )
         return train_df, test_df
 
     def match_just_states(
         self,
-        transitions_df: pd.DataFrame,
-        just_states_df: pd.DataFrame,
+        transitions_samples: pd.DataFrame,
+        pool_samples: pd.DataFrame,
         ratio: float = 1.10,
         seed: int = 42,
     ) -> pd.DataFrame:
-        """Sample just_states rows to cap examples against transitions.
+        """Draw non-transition samples capped against transition samples.
 
-        For each (volunteer, class label) bucket, whole IMU/MMG pairs are
-        drawn at random until adding another would exceed
-        ``floor(ratio * transitions examples)``. The cap counts individual
-        examples, not files: a just_states file holds far more examples than
-        a transitions file, so a file-count cap would not bound imbalance.
+        For each (volunteer, class) bucket the cap is
+        ``floor(ratio * transition samples)`` and samples are drawn
+        individually, so the cap is met exactly rather than being limited
+        to whole recordings. Buckets whose supply falls short contribute
+        everything they have and are reported.
         """
         if ratio <= 0:
             raise ValueError("ratio must be positive.")
-        pool = just_states_df[
-            just_states_df[RegistryColumns.FOLDER] == "folder_2"
-        ]
-        if transitions_df.empty or pool.empty:
-            return pool.iloc[0:0].copy()
+        if transitions_samples.empty or pool_samples.empty:
+            return pool_samples.iloc[0:0].copy()
 
-        transition_pairs = build_modality_pairs(transitions_df)
-        pool_pairs = build_modality_pairs(pool)
         rng = np.random.default_rng(seed)
         bucket_keys = [RegistryColumns.VOLUNTEER_ID, RegistryColumns.CLASS_LABEL]
-        chosen_keys: list[int] = []
+        demand = transitions_samples.groupby(bucket_keys, sort=True).size()
+        chosen: list[int] = []
+        shortfalls: list[str] = []
 
-        demand = transition_pairs.groupby(bucket_keys)[PairColumns.SAMPLES].sum()
-        for key, examples in demand.items():
+        for key, count in demand.items():
             volunteer, label = cast(tuple, key)
-            budget = int(np.floor(examples * ratio))
+            budget = int(np.floor(count * ratio))
             if budget <= 0:
                 continue
-            available = pool_pairs[
-                (pool_pairs[RegistryColumns.VOLUNTEER_ID] == volunteer)
-                & (pool_pairs[RegistryColumns.CLASS_LABEL] == label)
-            ].sort_values(PairColumns.PAIR_KEY)
+            available = pool_samples[
+                (pool_samples[RegistryColumns.VOLUNTEER_ID] == volunteer)
+                & (pool_samples[RegistryColumns.CLASS_LABEL] == label)
+            ].sort_values([SampleColumns.PAIR_KEY, SampleColumns.SAMPLE_INDEX])
             if available.empty:
-                logger.warning(
-                    "No just_states data for %s class %d", volunteer, label
+                shortfalls.append(
+                    f"{volunteer}/{LABEL_TO_CLASS[int(label)]}: 0 of {budget}"
                 )
                 continue
 
-            used = 0
-            for position in rng.permutation(len(available)):
-                candidate = available.iloc[int(position)]
-                size = int(candidate[PairColumns.SAMPLES])
-                if used + size > budget:
-                    continue
-                chosen_keys.append(cast(int, candidate.name))
-                used += size
-            if used < budget:
-                logger.debug(
-                    "just_states cap not filled for %s class %d: %d of %d "
-                    "examples", volunteer, label, used, budget,
+            take = min(budget, len(available))
+            if take < budget:
+                shortfalls.append(
+                    f"{volunteer}/{LABEL_TO_CLASS[int(label)]}: "
+                    f"{take} of {budget}"
                 )
+            positions = available.index.to_numpy()[rng.permutation(len(available))]
+            chosen.extend(positions[:take])
 
-        if not chosen_keys:
-            return pool.iloc[0:0].copy()
-        result = select_pair_rows(pool, pool_pairs.loc[sorted(chosen_keys)])
+        if shortfalls:
+            logger.warning(
+                "just_states supply below the %.2fx cap in %d bucket(s): %s",
+                ratio, len(shortfalls), "; ".join(shortfalls),
+            )
+        if not chosen:
+            return pool_samples.iloc[0:0].copy()
+
+        result = pool_samples.loc[sorted(chosen)].reset_index(drop=True)
         logger.info(
-            "Matched %d just_states examples to %d transitions examples "
+            "Matched %d just_states samples to %d transitions samples "
             "(cap ratio=%.2f)",
-            result[RegistryColumns.SAMPLES].sum(),
-            transitions_df[RegistryColumns.SAMPLES].sum(),
-            ratio,
+            len(result), len(transitions_samples), ratio,
         )
         return result
 

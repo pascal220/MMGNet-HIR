@@ -9,13 +9,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+import torch
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
-from dataset_registry import DatasetRegistry, LABEL_TO_CLASS, RegistryColumns
-from datasets import SingleModalityDataset
-from memory_manager import MemoryBudget, TensorStore, plan_resident_set
+from dataset_registry import (
+    DatasetRegistry,
+    LABEL_TO_CLASS,
+    RegistryColumns,
+    build_sample_table,
+    exclude_samples,
+)
+from datasets import ModalityTensors, SingleModalityDataset
+from memory_manager import MemoryBudget, plan_resident_set
 
 
 logging.basicConfig(
@@ -63,12 +70,41 @@ class ExperimentConfig:
 
 @dataclass(frozen=True)
 class SelectedData:
-    """The four groups the residency plan works with."""
+    """The four sample tables the residency plan works with."""
 
     mandatory_train: pd.DataFrame
     mandatory_test: pd.DataFrame
     optional_train: pd.DataFrame
     optional_test: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class ExperimentData:
+    """Everything one experiment needs, keyed ``<split>_<modality>``.
+
+    ``bundles`` holds the four resident tensors with their row-aligned
+    labels and metadata; ``loaders`` wraps the same tensors for training.
+    """
+
+    config: ExperimentConfig
+    bundles: dict[str, ModalityTensors]
+    loaders: dict[str, DataLoader]
+
+    @property
+    def train_imu(self) -> ModalityTensors:
+        return self.bundles["train_imu"]
+
+    @property
+    def train_mmg(self) -> ModalityTensors:
+        return self.bundles["train_mmg"]
+
+    @property
+    def test_imu(self) -> ModalityTensors:
+        return self.bundles["test_imu"]
+
+    @property
+    def test_mmg(self) -> ModalityTensors:
+        return self.bundles["test_mmg"]
 
 
 def _select_experiment_data(
@@ -77,7 +113,7 @@ def _select_experiment_data(
     folder_2_df: pd.DataFrame,
     config: ExperimentConfig,
 ) -> SelectedData:
-    """Choose the transitions and just_states rows for each split."""
+    """Choose the transition and just_states samples for each split."""
     combined = pd.concat([folder_1_df, folder_2_df], ignore_index=True)
 
     if config.setup == "same_volunteer":
@@ -90,22 +126,18 @@ def _select_experiment_data(
             test_fraction=config.test_fraction,
             seed=config.seed,
         )
-        js_pool = registry.filter_by_volunteer(folder_2_df, volunteer_id)
+        js_pool = build_sample_table(
+            registry.filter_by_volunteer(folder_2_df, volunteer_id)
+        )
         js_test = registry.match_just_states(
             trans_test,
             js_pool,
             ratio=config.just_states_ratio,
             seed=config.seed,
         )
-        # Keep the train and test just_states draws disjoint.
-        remaining_pool = js_pool[
-            ~js_pool[RegistryColumns.FILE_PATH].isin(
-                set(js_test[RegistryColumns.FILE_PATH])
-            )
-        ]
         js_train = registry.match_just_states(
             trans_train,
-            remaining_pool,
+            exclude_samples(js_pool, js_test),
             ratio=config.just_states_ratio,
             seed=config.seed,
         )
@@ -113,73 +145,72 @@ def _select_experiment_data(
 
     # Volunteer-level split: no within-volunteer test extraction.
     transitions_all = registry.get_valid_transitions(combined)
-    trans_train, trans_test = registry.select_volunteers_split(
+    trans_train_rows, trans_test_rows = registry.select_volunteers_split(
         transitions_all,
         config.train_volunteer_count,
         config.test_volunteer_count,
         seed=config.seed,
     )
+    trans_train = build_sample_table(trans_train_rows)
+    trans_test = build_sample_table(trans_test_rows)
+
+    # Train and test volunteers are disjoint, so the pools cannot overlap.
+    js_pool = build_sample_table(folder_2_df)
     js_train = registry.match_just_states(
-        trans_train,
-        folder_2_df,
-        ratio=config.just_states_ratio,
-        seed=config.seed,
+        trans_train, js_pool, ratio=config.just_states_ratio, seed=config.seed
     )
     js_test = registry.match_just_states(
-        trans_test,
-        folder_2_df,
-        ratio=config.just_states_ratio,
-        seed=config.seed,
+        trans_test, js_pool, ratio=config.just_states_ratio, seed=config.seed
     )
     return SelectedData(trans_train, trans_test, js_train, js_test)
 
 
+def _build_bundles(
+    train_samples: pd.DataFrame,
+    test_samples: pd.DataFrame,
+) -> dict[str, ModalityTensors]:
+    """Read the four resident tensors: IMU/MMG for train and test."""
+    frames = {"train": train_samples, "test": test_samples}
+    bundles: dict[str, ModalityTensors] = {}
+    for split, samples in frames.items():
+        if samples.empty:
+            raise ValueError(f"{split} selection is empty.")
+        for modality in ("IMU", "MMG"):
+            bundles[f"{split}_{modality.lower()}"] = ModalityTensors.from_samples(
+                samples, modality
+            )
+    return bundles
+
+
 def _build_loaders(
-    train_df: pd.DataFrame,
-    test_df: pd.DataFrame,
-    registry: DatasetRegistry,
-    store: TensorStore,
+    bundles: dict[str, ModalityTensors],
     batch_size: int,
+    seed: int,
 ) -> dict[str, DataLoader]:
     """Build one loader per split and modality.
 
-    ``num_workers`` stays at zero: the arrays are already resident float32
-    tensors, so an item is a slice, and worker processes on Windows would
-    copy the whole resident set into every worker.
+    ``num_workers`` stays at zero: items are slices of an already resident
+    tensor, and worker processes on Windows would copy the whole resident
+    set into every worker.
     """
-    frames = {
-        "train": train_df,
-        "test": test_df,
-    }
     loaders: dict[str, DataLoader] = {}
-
-    for split, df in frames.items():
-        for modality in ("imu", "mmg"):
-            subset = registry.filter_by_modality(df, modality)
-            if subset.empty:
-                raise ValueError(
-                    f"{split} data contains no {modality.upper()} records."
-                )
-            dataset = SingleModalityDataset(subset, store)
-            loaders[f"{split}_{modality}"] = DataLoader(
-                dataset,
-                batch_size=batch_size,
-                shuffle=split == "train",
-                num_workers=0,
-                pin_memory=True,
-            )
+    for name, bundle in bundles.items():
+        is_train = name.startswith("train")
+        loaders[name] = DataLoader(
+            SingleModalityDataset(bundle),
+            batch_size=batch_size,
+            shuffle=is_train,
+            num_workers=0,
+            pin_memory=True,
+            generator=torch.Generator().manual_seed(seed) if is_train else None,
+        )
     return loaders
 
 
-def _log_class_distribution(name: str, df: pd.DataFrame) -> None:
-    counts = (
-        df[df[RegistryColumns.MODALITY] == "IMU"]
-        .groupby(RegistryColumns.CLASS_LABEL)[RegistryColumns.SAMPLES]
-        .sum()
-        .sort_index()
-    )
+def _log_class_distribution(name: str, samples: pd.DataFrame) -> None:
+    counts = samples.groupby(RegistryColumns.CLASS_LABEL).size().sort_index()
     logger.info(
-        "%s examples per class: %s",
+        "%s samples per class: %s",
         name,
         {LABEL_TO_CLASS[int(label)]: int(value) for label, value in counts.items()},
     )
@@ -195,8 +226,8 @@ def main(
     test_fraction: float = 0.10,
     just_states_ratio: float = 1.10,
     batch_size: int = 32,
-) -> dict[str, DataLoader]:
-    """Prepare reproducible volunteer-based training and test loaders."""
+) -> ExperimentData:
+    """Prepare reproducible volunteer-based training and test data."""
     config = ExperimentConfig(
         setup=setup,
         same_volunteer_id=same_volunteer_id,
@@ -228,38 +259,37 @@ def main(
         seed=config.seed,
     )
 
-    train_df = pd.concat(
+    train_samples = pd.concat(
         [selected.mandatory_train, plan.optional_train], ignore_index=True
     )
-    test_df = pd.concat(
+    test_samples = pd.concat(
         [selected.mandatory_test, plan.optional_test], ignore_index=True
     )
 
-    store = TensorStore(budget=budget)
-    store.load(
-        train_df[RegistryColumns.FILE_PATH].tolist()
-        + test_df[RegistryColumns.FILE_PATH].tolist()
-    )
-
-    loaders = _build_loaders(train_df, test_df, registry, store, config.batch_size)
-    logger.info(
-        "Prepared %s mode: train %d examples from %d recordings | "
-        "test %d examples from %d recordings",
-        config.setup,
-        len(loaders["train_imu"].dataset),
-        len(train_df) // 2,
-        len(loaders["test_imu"].dataset),
-        len(test_df) // 2,
-    )
-    _log_class_distribution("Train", train_df)
-    _log_class_distribution("Test", test_df)
-    for name in ("train_imu", "train_mmg"):
-        dataset = loaders[name].dataset
-        logger.info(
-            "%s input shape: %s (%s)",
-            name, dataset.item_shape, dataset.shape_spec.describe(),
+    bundles = _build_bundles(train_samples, test_samples)
+    resident = sum(bundle.nbytes for bundle in bundles.values())
+    if resident > budget.total_budget_bytes:
+        raise MemoryError(
+            f"Resident tensors need {resident / 1024 ** 3:.2f} GiB but the "
+            f"budget is {config.total_budget_gb:.2f} GiB. The residency plan "
+            "and the data on disk disagree."
         )
-    return loaders
+
+    loaders = _build_loaders(bundles, config.batch_size, config.seed)
+    logger.info(
+        "Prepared %s mode: train %d samples | test %d samples | %.2f GiB resident",
+        config.setup, len(train_samples), len(test_samples),
+        resident / 1024 ** 3,
+    )
+    _log_class_distribution("Train", train_samples)
+    _log_class_distribution("Test", test_samples)
+    for name in ("train_imu", "train_mmg"):
+        bundle = bundles[name]
+        logger.info(
+            "%s tensor: %s (%s)",
+            name, tuple(bundle.data.shape), bundle.shape_spec.describe(),
+        )
+    return ExperimentData(config=config, bundles=bundles, loaders=loaders)
 
 
 if __name__ == "__main__":

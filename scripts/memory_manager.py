@@ -1,13 +1,17 @@
 """
 memory_manager.py
 
-Plans which of the selected files can stay resident within a single memory
-budget, then loads them as float32 tensors.
+Plans which of the selected samples can stay resident within a single
+memory budget, then reads exactly those samples into float32 tensors.
 
-Data carrying transition information is mandatory and is reserved first.
-Whatever budget remains is divided equally between the selected volunteers
-and spent on data without transition information, which is dropped when it
-does not fit.
+Samples carrying transition information are mandatory and are reserved
+first. Whatever budget remains is divided equally between the selected
+volunteers and spent on samples without transition information, which are
+dropped individually when they do not fit.
+
+Only selected samples are read. A file is opened through a memory map and
+just the chosen rows are copied, so a bucket that wants 93 samples from a
+3448-sample recording pays for 93.
 """
 
 import logging
@@ -19,10 +23,10 @@ import torch
 from torch import Tensor
 
 from dataset_registry import (
-    PairColumns,
+    MODALITY_PATH_COLUMN,
     RegistryColumns,
-    build_modality_pairs,
-    select_pair_rows,
+    SampleColumns,
+    sample_bytes,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,7 +42,7 @@ SPLIT_WEIGHTS = {TRAIN: 0.9, TEST: 0.1}
 
 @dataclass
 class MemoryBudget:
-    """A single limit covering every array held in memory."""
+    """A single limit covering every tensor held in memory."""
 
     total_budget_gb: float
 
@@ -56,7 +60,7 @@ class MemoryBudget:
 
 @dataclass
 class ResidencyPlan:
-    """The outcome of fitting the selected data into the budget."""
+    """The outcome of fitting the selected samples into the budget."""
 
     optional_train: pd.DataFrame
     optional_test: pd.DataFrame
@@ -64,8 +68,7 @@ class ResidencyPlan:
     optional_bytes: int
     budget_bytes: int
     volunteer_bytes: dict[tuple[str, str], int] = field(default_factory=dict)
-    dropped_pairs: int = 0
-    dropped_examples: int = 0
+    dropped_samples: int = 0
 
     @property
     def total_bytes(self) -> int:
@@ -79,8 +82,7 @@ class ResidencyPlan:
             f"  Just states (kept): {self.optional_bytes / BYTES_PER_GB:.2f} GiB",
             f"  Total resident    : {self.total_bytes / BYTES_PER_GB:.2f} GiB "
             f"({self.total_bytes / self.budget_bytes * 100:.1f}%)",
-            f"  Dropped           : {self.dropped_pairs} pairs / "
-            f"{self.dropped_examples} examples",
+            f"  Dropped           : {self.dropped_samples} samples",
         ]
         for (volunteer, split), size in sorted(self.volunteer_bytes.items()):
             lines.append(
@@ -97,17 +99,13 @@ def plan_resident_set(
     budget: MemoryBudget,
     seed: int = 42,
 ) -> ResidencyPlan:
-    """Decide which optional rows fit, before any array is loaded.
+    """Decide which optional samples fit, before any array is read.
 
-    Planning uses the measured ``resident_bytes`` of each file, so the
-    result is known without touching the data.
+    Every sample carries its own float32 cost, so the result is exact
+    without touching the data.
     """
-    col = RegistryColumns
     budget_bytes = budget.total_budget_bytes
-    mandatory_bytes = int(
-        mandatory_train[col.RESIDENT_BYTES].sum()
-        + mandatory_test[col.RESIDENT_BYTES].sum()
-    )
+    mandatory_bytes = sample_bytes(mandatory_train) + sample_bytes(mandatory_test)
 
     if mandatory_bytes > budget_bytes:
         raise MemoryError(
@@ -119,13 +117,12 @@ def plan_resident_set(
 
     remaining = budget_bytes - mandatory_bytes
     sources = {TRAIN: optional_train, TEST: optional_test}
-    pairs = {split: build_modality_pairs(df) for split, df in sources.items()}
 
     buckets: dict[tuple[str, str], pd.DataFrame] = {}
-    for split, pair_df in pairs.items():
-        if pair_df.empty:
+    for split, df in sources.items():
+        if df.empty:
             continue
-        for volunteer, group in pair_df.groupby(col.VOLUNTEER_ID):
+        for volunteer, group in df.groupby(RegistryColumns.VOLUNTEER_ID):
             buckets[(str(volunteer), split)] = group
 
     if not buckets:
@@ -139,56 +136,40 @@ def plan_resident_set(
 
     allocations = _allocate_by_volunteer(buckets, remaining)
     rng = np.random.default_rng(seed)
-    kept: dict[str, list[pd.DataFrame]] = {TRAIN: [], TEST: []}
+    kept: dict[str, list[np.ndarray]] = {TRAIN: [], TEST: []}
     volunteer_bytes: dict[tuple[str, str], int] = {}
-    kept_keys: set = set()
 
     for bucket_key in sorted(buckets):
-        group = buckets[bucket_key].sort_values(PairColumns.PAIR_KEY)
-        quota = allocations[bucket_key]
-        used = 0
-        chosen: list[int] = []
-        for position in rng.permutation(len(group)):
-            candidate = group.iloc[int(position)]
-            size = int(candidate[PairColumns.PAIR_BYTES])
-            if used + size > quota:
-                continue
-            chosen.append(int(candidate.name))
-            used += size
-        volunteer_bytes[bucket_key] = used
-        kept_keys.update(chosen)
-        if chosen:
-            kept[bucket_key[1]].append(group.loc[sorted(chosen)])
-
-    kept_pairs = {
-        split: (
-            pd.concat(parts, ignore_index=False)
-            if parts
-            else pairs[split].iloc[0:0]
+        group = buckets[bucket_key].sort_values(
+            [SampleColumns.PAIR_KEY, SampleColumns.SAMPLE_INDEX]
         )
-        for split, parts in kept.items()
-    }
-    result = {
-        split: select_pair_rows(sources[split], kept_pairs[split])
-        for split in (TRAIN, TEST)
-    }
+        quota = allocations[bucket_key]
+        costs = group[SampleColumns.SAMPLE_BYTES].to_numpy(dtype=np.int64)
+        order = rng.permutation(len(group))
+        affordable = int(np.searchsorted(costs[order].cumsum(), quota, side="right"))
+        chosen = group.index.to_numpy()[order[:affordable]]
+        volunteer_bytes[bucket_key] = int(costs[order[:affordable]].sum())
+        if affordable:
+            kept[bucket_key[1]].append(chosen)
 
-    optional_bytes = int(
-        sum(df[col.RESIDENT_BYTES].sum() for df in result.values())
-    )
-    offered = pd.concat([pairs[TRAIN], pairs[TEST]], ignore_index=True)
-    kept_examples = int(
-        sum(df[col.SAMPLES].sum() for df in result.values()) // 2
-    )
+    result: dict[str, pd.DataFrame] = {}
+    for split, parts in kept.items():
+        if parts:
+            positions = np.sort(np.concatenate(parts))
+            result[split] = sources[split].loc[positions].reset_index(drop=True)
+        else:
+            result[split] = sources[split].iloc[0:0].copy()
+
+    offered = len(optional_train) + len(optional_test)
+    kept_count = len(result[TRAIN]) + len(result[TEST])
     plan = ResidencyPlan(
         optional_train=result[TRAIN],
         optional_test=result[TEST],
         mandatory_bytes=mandatory_bytes,
-        optional_bytes=optional_bytes,
+        optional_bytes=sample_bytes(result[TRAIN]) + sample_bytes(result[TEST]),
         budget_bytes=budget_bytes,
         volunteer_bytes=volunteer_bytes,
-        dropped_pairs=len(offered) - sum(len(df) for df in kept_pairs.values()),
-        dropped_examples=int(offered[PairColumns.SAMPLES].sum()) - kept_examples,
+        dropped_samples=offered - kept_count,
     )
     logger.info("%s", plan.summary())
     return plan
@@ -215,10 +196,7 @@ def _allocate_by_volunteer(
         / len(volunteers)
         for key in buckets
     }
-    demands = {
-        key: int(group[PairColumns.PAIR_BYTES].sum())
-        for key, group in buckets.items()
-    }
+    demands = {key: sample_bytes(group) for key, group in buckets.items()}
 
     allocations: dict[tuple[str, str], int] = {}
     pending = set(buckets)
@@ -245,59 +223,49 @@ def _allocate_by_volunteer(
     return allocations
 
 
-class TensorStore:
-    """Holds every resident array as a float32 tensor, keyed by file path.
+def load_samples(samples: pd.DataFrame, modality: str) -> Tensor:
+    """Read the selected samples of one modality into a single tensor.
 
-    Arrays keep their native shape: IMU stays (examples, windows, time,
-    channels) and MMG stays (examples, windows, scales, time, channels).
+    The destination is allocated once and filled in place, since
+    concatenating parts would briefly need twice the memory. Rows keep the
+    order of ``samples``, so the returned tensor lines up with the sample
+    table and with the other modality.
     """
+    if modality not in MODALITY_PATH_COLUMN:
+        raise ValueError(f"Unknown modality '{modality}'.")
+    if samples.empty:
+        raise ValueError("Cannot load an empty sample table.")
 
-    def __init__(self, budget: MemoryBudget):
-        self._budget = budget
-        self._tensors: dict[str, Tensor] = {}
-        self._resident_bytes = 0
+    path_column = MODALITY_PATH_COLUMN[modality]
+    samples = samples.reset_index(drop=True)
+    total = len(samples)
 
-    @property
-    def resident_bytes(self) -> int:
-        return self._resident_bytes
+    probe = np.load(samples.at[0, path_column], mmap_mode="r", allow_pickle=False)
+    item_shape = tuple(int(dim) for dim in probe.shape[1:])
+    destination = torch.empty((total, *item_shape), dtype=torch.float32)
+    expected = destination.nelement() * destination.element_size()
+    logger.info(
+        "Reading %d %s samples into a %.2f GiB tensor",
+        total, modality, expected / BYTES_PER_GB,
+    )
 
-    def load(self, file_paths: list[str]) -> None:
-        """Load every planned file into memory as float32."""
-        unique_paths = sorted(set(file_paths))
-        total = len(unique_paths)
-        logger.info("Loading %d files into memory as float32", total)
+    groups = list(samples.groupby(path_column, sort=True))
+    for number, (path, group) in enumerate(groups, start=1):
+        array = np.load(path, mmap_mode="r", allow_pickle=False)
+        if tuple(int(dim) for dim in array.shape[1:]) != item_shape:
+            raise ValueError(
+                f"'{path}' has item shape {array.shape[1:]}, expected {item_shape}."
+            )
+        wanted = group[SampleColumns.SAMPLE_INDEX].to_numpy(dtype=np.int64)
+        # Read in file order, then scatter to the caller's row order.
+        read_order = np.argsort(wanted)
+        block = np.asarray(array[wanted[read_order]], dtype=np.float32)
+        rows = group.index.to_numpy()[read_order]
+        destination[torch.from_numpy(rows)] = torch.from_numpy(block)
 
-        for index, path in enumerate(unique_paths, start=1):
-            if path in self._tensors:
-                continue
-            # mmap avoids holding the float64 source in the heap.
-            array = np.load(path, mmap_mode="r", allow_pickle=False)
-            tensor = torch.from_numpy(np.asarray(array, dtype=np.float32))
-            size = tensor.nelement() * tensor.element_size()
+        if number % max(1, len(groups) // 10) == 0 or number == len(groups):
+            logger.debug(
+                "%s progress: %d/%d files", modality, number, len(groups)
+            )
 
-            if self._resident_bytes + size > self._budget.total_budget_bytes:
-                raise MemoryError(
-                    f"Loading '{path}' would exceed the memory budget "
-                    f"({self._budget.total_budget_gb:.2f} GiB). The residency "
-                    "plan and the data on disk disagree."
-                )
-
-            self._tensors[path] = tensor
-            self._resident_bytes += size
-
-            if index % max(1, total // 10) == 0 or index == total:
-                logger.info(
-                    "Loading progress: %d/%d (%.0f%%) | %.2f GiB resident",
-                    index, total, index / total * 100,
-                    self._resident_bytes / BYTES_PER_GB,
-                )
-
-        logger.info(
-            "Resident set ready: %d files | %.2f GiB of %.2f GiB budget",
-            len(self._tensors),
-            self._resident_bytes / BYTES_PER_GB,
-            self._budget.total_budget_gb,
-        )
-
-    def get(self, file_path: str) -> Tensor:
-        return self._tensors[file_path]
+    return destination
