@@ -7,6 +7,7 @@ import sys
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 import torch
@@ -212,7 +213,7 @@ def _log_class_distribution(name: str, samples: pd.DataFrame) -> None:
     logger.info(
         "%s samples per class: %s",
         name,
-        {LABEL_TO_CLASS[int(label)]: int(value) for label, value in counts.items()},
+        {LABEL_TO_CLASS[cast(int, label)]: int(value) for label, value in counts.items()},
     )
 
 
