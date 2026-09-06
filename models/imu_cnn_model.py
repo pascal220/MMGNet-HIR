@@ -1,5 +1,5 @@
 # imu_cnn_model.py
-# Implementation of the CNN architecture from:
+# Initial CNN backbone based on:
 # Su et al., "A CNN-Based Method for Intent Recognition Using Inertial
 # Measurement Units and Intelligent Lower Limb Prosthesis"
 # IEEE TNSRE, Vol. 27, No. 5, May 2019

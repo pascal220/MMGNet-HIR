@@ -47,6 +47,5 @@ def train_and_evaluate(X_train, y_train, X_val, y_val, X_test, y_test, batch_siz
 
     # ── Save / Load ─────────────────────────────────────────────────────────────
     trainer.save(checkpoint_path)
-    trainer.load(checkpoint_path)
     
     return history
