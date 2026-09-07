@@ -20,7 +20,7 @@ from dataset_registry import (
     sample_bytes,
 )
 from datasets import ModalityTensors, SingleModalityDataset
-from main import ExperimentConfig, _build_bundles, _select_experiment_data
+from data_loader import ExperimentConfig, _build_bundles, _select_experiment_data
 from memory_manager import BYTES_PER_GB, MemoryBudget, plan_resident_set
 
 CHECKS: list[str] = []
