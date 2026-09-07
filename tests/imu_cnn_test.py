@@ -3,19 +3,23 @@ from torch.utils.data import TensorDataset, DataLoader
 from imu_cnn_model import IntentCNN, IntentCNNTrainer, IntentCNNTuner
 
 
-def train_and_evaluate(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=32, checkpoint_path="checkpoints/intent_cnn.pt"):
-    """Train and evaluate the Intent CNN model.
+def train_and_evaluate(X_train, y_train, X_test, y_test, batch_size=32, checkpoint_path="checkpoints/intent_cnn.pt"):
+    """Train and evaluate the single-window Intent CNN model.
     
     Args:
-        X_train: Training input tensor of shape (N, 6, 125)
+        X_train: Training input tensor of shape (N, 6, 125) from single_window input mode
         y_train: Training labels tensor of shape (N,)
-        X_val: Validation input tensor of shape (M, 6, 125)
-        y_val: Validation labels tensor of shape (M,)
+        X_test: Test input tensor of shape (M, 6, 125) from single_window input mode
+        y_test: Test labels tensor of shape (M,)
         batch_size: Batch size for DataLoaders (default: 32)
         checkpoint_path: Path to save/load model checkpoint (default: "checkpoints/intent_cnn.pt")
     
     Returns:
         dict: Training history from the trainer
+
+    Note:
+        The body still expects validation tensors and will be refactored later
+        to split validation data from the training set inside this function.
     """
     # ── Build model ────────────────────────────────────────────────────────────
     model   = IntentCNN(in_channels=6, num_classes=7)

@@ -23,9 +23,6 @@ def train_and_evaluate(
     X_imu_train,
     X_cwt_train,
     y_train,
-    X_imu_val,
-    X_cwt_val,
-    y_val,
     X_imu_test,
     X_cwt_test,
     y_test,
@@ -35,18 +32,15 @@ def train_and_evaluate(
     fusion_cnn_checkpoint_path=FUSION_CNN_PATH,
     fusion_gru_checkpoint_path=FUSION_GRU_PATH,
 ):
-    """Train and evaluate FusionCNN and FusionGRU models.
+    """Train and evaluate single-window FusionCNN and FusionGRU models.
 
     Args:
-        X_imu_train: Training IMU tensor of shape (N, 6, 125)
-        X_cwt_train: Training CWT tensor of shape (N, 5, 40, 125)
+        X_imu_train: Training IMU tensor of shape (N, 6, 125) from single_window input mode
+        X_cwt_train: Training CWT tensor of shape (N, 5, 40, 125) from single_window input mode
         y_train: Training labels tensor of shape (N,)
-        X_imu_val: Validation IMU tensor of shape (M, 6, 125)
-        X_cwt_val: Validation CWT tensor of shape (M, 5, 40, 125)
-        y_val: Validation labels tensor of shape (M,)
-        X_imu_test: Test IMU tensor of shape (K, 6, 125)
-        X_cwt_test: Test CWT tensor of shape (K, 5, 40, 125)
-        y_test: Test labels tensor of shape (K,)
+        X_imu_test: Test IMU tensor of shape (M, 6, 125) from single_window input mode
+        X_cwt_test: Test CWT tensor of shape (M, 5, 40, 125) from single_window input mode
+        y_test: Test labels tensor of shape (M,)
         batch_size: Batch size for DataLoaders (default: 32)
         intent_cnn_path: Path to the trained IntentCNN checkpoint
         gesture_cnn_path: Path to the trained LocomotionMMGCNN checkpoint
@@ -55,6 +49,10 @@ def train_and_evaluate(
 
     Returns:
         dict: Training histories and final validation/test results for both fusion models
+
+    Note:
+        The body still expects validation tensors and will be refactored later
+        to split validation data from the training set inside this function.
     """
     # ── Create DataLoaders ─────────────────────────────────────────────────────
     train_loader = DataLoader(

@@ -44,6 +44,16 @@ def _log_prepared_summary(prepared: PreparedData) -> None:
         logger.info("Prepared standalone MMG arguments are available as prepared.mmg_args.")
 
 
+def _log_test_dispatch_hint(prepared: PreparedData) -> None:
+    """Log which test entry points will be called after their bodies are refactored."""
+    if prepared.model_target == "fusion":
+        logger.info("Next refactor will route to tests.fusion_test.train_and_evaluate(*prepared.fusion_args).")
+        return
+
+    logger.info("Next refactor will route to tests.imu_cnn_test.train_and_evaluate(*prepared.imu_args).")
+    logger.info("Next refactor will route to tests.mmg_cnn_test.train_and_evaluate(*prepared.mmg_args).")
+
+
 def main() -> int:
     """Prepare train/test tensors for later model test-script execution."""
     parser = argparse.ArgumentParser(
@@ -94,12 +104,15 @@ def main() -> int:
         just_states_ratio=args.just_states_ratio,
         batch_size=args.batch_size,
     )
+
     prepared = prepare_training_data(
         experiment,
         input_mode=args.input_mode,
         model_target=args.model_target,
     )
+
     _log_prepared_summary(prepared)
+    _log_test_dispatch_hint(prepared)
 
     return 0
 

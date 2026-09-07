@@ -11,21 +11,23 @@ TIMEOUT      = 3600    # 1 hour
 TRAIN_EPOCHS = 100     # final training after Optuna
 
 
-def train_and_evaluate(X_train, y_train, X_val, y_val, X_test, y_test, batch_size=32, checkpoint_path="checkpoints/best_mmg_cnn.pt"):
-    """Train and evaluate the Locomotion MMG CNN model.
+def train_and_evaluate(X_train, y_train, X_test, y_test, batch_size=32, checkpoint_path="checkpoints/best_mmg_cnn.pt"):
+    """Train and evaluate the single-window Locomotion MMG CNN model.
 
     Args:
-        X_train: Training input tensor of shape (N, 5, 40, 125)
+        X_train: Training input tensor of shape (N, 5, 40, 125) from single_window input mode
         y_train: Training labels tensor of shape (N,)
-        X_val: Validation input tensor of shape (M, 5, 40, 125)
-        y_val: Validation labels tensor of shape (M,)
-        X_test: Test input tensor of shape (K, 5, 40, 125)
-        y_test: Test labels tensor of shape (K,)
+        X_test: Test input tensor of shape (M, 5, 40, 125) from single_window input mode
+        y_test: Test labels tensor of shape (M,)
         batch_size: Batch size for DataLoaders (default: 32)
         checkpoint_path: Path to save/load model checkpoint (default: "checkpoints/best_mmg_cnn.pt")
 
     Returns:
         dict: Training history and final validation/test results from the trainer
+
+    Note:
+        The body still expects validation tensors and will be refactored later
+        to split validation data from the training set inside this function.
     """
     # ── Build model ────────────────────────────────────────────────────────────
     model   = LocomotionMMGCNN(in_channels=IN_CHANNELS, num_classes=NUM_CLASSES)
