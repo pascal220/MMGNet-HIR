@@ -502,7 +502,7 @@ class FusionCNNTuner:
     """
 
     _SEARCH = dict(
-        fc_hidden    = [64, 128, 256, 512],
+        fc_hidden    = [64, 128, 256],
         batch_size   = [16, 32, 64, 128],
         epochs       = 50,
         sgd_lr       = (1e-4, 1e-1),

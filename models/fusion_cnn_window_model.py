@@ -618,7 +618,7 @@ class FusionCNNWindowTuner:
     _SEARCH = dict(
         # Fusion head architecture
         n_hidden_layers = (1, 3),
-        hidden_dims     = [64, 128, 256, 512],
+        hidden_dims     = [64, 128, 256],
         dropout_rate    = (0.2, 0.7),
         # Training
         batch_size      = [32, 64, 128],

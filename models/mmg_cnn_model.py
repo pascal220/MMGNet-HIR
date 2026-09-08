@@ -576,7 +576,7 @@ class LocomotionMMGCNNTuner:
         kernel_sizes  = [3, 5, 7],
         strides       = [1, 2, 3],
         dropout_rates = (0.1, 0.5),
-        fc_hidden     = [None, 64, 128, 256],   # None = no hidden FC layer
+        fc_hidden     = [64, 128, 256],
         # Training
         batch_size    = [16, 32, 64, 128],
         epochs        = 50,                      # fixed per Optuna trial

@@ -520,7 +520,7 @@ class FusionGRUTuner:
     """
 
     _SEARCH = dict(
-        fc_hidden    = [64, 128, 256, 512],
+        fc_hidden    = [64, 128, 256],
         gru_hidden   = [32, 64, 128, 256],
         gru_layers   = (1, 3),
         gru_dropout  = (0.0, 0.5),

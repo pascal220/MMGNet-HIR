@@ -678,7 +678,7 @@ class FusionGRUWindowTuner:
 
     _SEARCH = dict(
         # GRU architecture
-        gru_hidden_dim = [64, 128, 256, 512],
+        gru_hidden_dim = [64, 128, 256],
         gru_num_layers = (1, 3),
         gru_dropout    = (0.0, 0.5),
         seq_len        = [1, 2, 4],

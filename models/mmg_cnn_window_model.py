@@ -597,7 +597,7 @@ class LocomotionMMGCNNWindowTuner:
         strides       = [1, 2, 3],
         dropout_rates = (0.1, 0.5),
         # Classifier
-        fc_hidden     = [None, 64, 128, 256],
+        fc_hidden     = [64, 128, 256],
         # Training
         batch_size    = [16, 32, 64],
         epochs        = 50,                         # fixed per trial
