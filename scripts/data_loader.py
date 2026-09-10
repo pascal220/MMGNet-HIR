@@ -119,8 +119,8 @@ class PreparedData:
     ``experiment``. The top-level tensors are transformed according to
     ``input_mode``:
 
-    - ``windowed`` keeps all four windows per sample:
-      IMU ``(N, 4, 6, 125)``, MMG/CWT ``(N, 4, 5, 40, 125)``.
+        - ``windowed`` keeps all four windows per sample:
+            IMU ``(N, 6, 125, 4)``, MMG/CWT ``(N, 5, 40, 125, 4)``.
     - ``single_window`` expands every window into a separate sample:
       IMU ``(N*4, 6, 125)``, MMG/CWT ``(N*4, 5, 40, 125)``.
     """
@@ -375,41 +375,45 @@ def _validate_input_mode(input_mode: str) -> InputMode:
 
 
 def _format_imu_windowed(data: torch.Tensor) -> torch.Tensor:
-    """Convert IMU from ``(N, 4, 125, 6)`` to ``(N, 4, 6, 125)``."""
+    """Convert IMU from ``(N, 4, 125, 6)`` to ``(N, 6, 125, 4)``."""
     if data.dim() != 4:
         raise ValueError(
             f"Expected IMU data with shape (N, 4, 125, 6), got {tuple(data.shape)}."
         )
-    return data.permute(0, 1, 3, 2).contiguous()
+    return data.permute(0, 3, 2, 1).contiguous()
 
 
 def _format_mmg_windowed(data: torch.Tensor) -> torch.Tensor:
-    """Convert MMG from ``(N, 4, 40, 125, 5)`` to ``(N, 4, 5, 40, 125)``."""
+    """Convert MMG from ``(N, 4, 40, 125, 5)`` to ``(N, 5, 40, 125, 4)``."""
     if data.dim() != 5:
         raise ValueError(
             f"Expected MMG data with shape (N, 4, 40, 125, 5), got {tuple(data.shape)}."
         )
-    return data.permute(0, 1, 4, 2, 3).contiguous()
+    return data.permute(0, 4, 2, 3, 1).contiguous()
 
 
 def _expand_imu_windows(data: torch.Tensor) -> torch.Tensor:
-    """Convert windowed IMU from ``(N, 4, 6, 125)`` to ``(N*4, 6, 125)``."""
+    """Convert windowed IMU from ``(N, 6, 125, 4)`` to ``(N*4, 6, 125)``."""
     if data.dim() != 4:
         raise ValueError(
-            f"Expected windowed IMU data with shape (N, 4, 6, 125), got {tuple(data.shape)}."
+            f"Expected windowed IMU data with shape (N, 6, 125, 4), got {tuple(data.shape)}."
         )
-    n_samples, n_windows, channels, time_steps = data.shape
-    return data.reshape(n_samples * n_windows, channels, time_steps).contiguous()
+    n_samples, channels, time_steps, n_windows = data.shape
+    return data.permute(0, 3, 1, 2).reshape(
+        n_samples * n_windows, channels, time_steps
+    ).contiguous()
 
 
 def _expand_mmg_windows(data: torch.Tensor) -> torch.Tensor:
-    """Convert windowed MMG from ``(N, 4, 5, 40, 125)`` to ``(N*4, 5, 40, 125)``."""
+    """Convert windowed MMG from ``(N, 5, 40, 125, 4)`` to ``(N*4, 5, 40, 125)``."""
     if data.dim() != 5:
         raise ValueError(
-            f"Expected windowed MMG data with shape (N, 4, 5, 40, 125), got {tuple(data.shape)}."
+            f"Expected windowed MMG data with shape (N, 5, 40, 125, 4), got {tuple(data.shape)}."
         )
-    n_samples, n_windows, channels, scales, time_steps = data.shape
-    return data.reshape(n_samples * n_windows, channels, scales, time_steps).contiguous()
+    n_samples, channels, scales, time_steps, n_windows = data.shape
+    return data.permute(0, 4, 1, 2, 3).reshape(
+        n_samples * n_windows, channels, scales, time_steps
+    ).contiguous()
 
 
 def _expand_labels_for_windows(labels: torch.Tensor, n_windows: int) -> torch.Tensor:
@@ -478,7 +482,7 @@ def prepare_single_window_inputs(
     test_imu = _format_imu_windowed(experiment.test_imu.data)
     train_mmg = _format_mmg_windowed(experiment.train_mmg.data)
     test_mmg = _format_mmg_windowed(experiment.test_mmg.data)
-    n_windows = int(train_imu.shape[1])
+    n_windows = int(train_imu.shape[-1])
 
     return PreparedData(
         experiment=experiment,

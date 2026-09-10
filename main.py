@@ -54,6 +54,33 @@ def _log_test_dispatch_hint(prepared: PreparedData) -> None:
     logger.info("Next refactor will route to tests.mmg_cnn_test.train_and_evaluate(*prepared.mmg_args).")
 
 
+def _run_selected_tests(prepared: PreparedData) -> None:
+    """Reserve the future test dispatch; execution remains disabled for now."""
+    if prepared.input_mode == "windowed":
+        if prepared.model_target == "fusion":
+            # from tests.fusion_windows_test import train_and_evaluate
+            # train_and_evaluate(*prepared.fusion_args)
+            logger.info("Windowed fusion test route selected (disabled until test body refactor).")
+        else:
+            # from tests.imu_cnn_windows_test import train_and_evaluate as train_imu
+            # from tests.mmg_cnn_windows_test import train_and_evaluate as train_mmg
+            # train_imu(*prepared.imu_args)
+            # train_mmg(*prepared.mmg_args)
+            logger.info("Windowed standalone test routes selected (disabled until test body refactor).")
+        return
+
+    if prepared.model_target == "fusion":
+        # from tests.fusion_test import train_and_evaluate
+        # train_and_evaluate(*prepared.fusion_args)
+        logger.info("Single-window fusion test route selected (disabled until test body refactor).")
+    else:
+        # from tests.imu_cnn_test import train_and_evaluate as train_imu
+        # from tests.mmg_cnn_test import train_and_evaluate as train_mmg
+        # train_imu(*prepared.imu_args)
+        # train_mmg(*prepared.mmg_args)
+        logger.info("Single-window standalone test routes selected (disabled until test body refactor).")
+
+
 def main() -> int:
     """Prepare train/test tensors for later model test-script execution."""
     parser = argparse.ArgumentParser(
@@ -113,6 +140,7 @@ def main() -> int:
 
     _log_prepared_summary(prepared)
     _log_test_dispatch_hint(prepared)
+    # _run_selected_tests(prepared)
 
     return 0
 
