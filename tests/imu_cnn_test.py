@@ -1,9 +1,24 @@
+import sys
+from pathlib import Path
+
 import torch
 from torch.utils.data import TensorDataset, DataLoader
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
 from imu_cnn_model import IntentCNN, IntentCNNTrainer, IntentCNNTuner
+from split_utils import split_train_validation
 
 
-def train_and_evaluate(X_train, y_train, X_test, y_test, batch_size=32, checkpoint_path="checkpoints/intent_cnn.pt"):
+def train_and_evaluate(
+    X_train,
+    y_train,
+    X_test,
+    y_test,
+    train_metadata,
+    batch_size=32,
+    checkpoint_path="checkpoints/intent_cnn.pt",
+):
     """Train and evaluate the single-window Intent CNN model.
     
     Args:
@@ -11,19 +26,22 @@ def train_and_evaluate(X_train, y_train, X_test, y_test, batch_size=32, checkpoi
         y_train: Training labels tensor of shape (N,)
         X_test: Test input tensor of shape (M, 6, 125) from single_window input mode
         y_test: Test labels tensor of shape (M,)
+        train_metadata: Row-aligned metadata for X_train/y_train, used to carve
+            out a stratified, group-aware 10% validation split.
         batch_size: Batch size for DataLoaders (default: 32)
         checkpoint_path: Path to save/load model checkpoint (default: "checkpoints/intent_cnn.pt")
     
     Returns:
         dict: Training history from the trainer
-
-    Note:
-        The body still expects validation tensors and will be refactored later
-        to split validation data from the training set inside this function.
     """
     # ── Build model ────────────────────────────────────────────────────────────
     model   = IntentCNN(in_channels=6, num_classes=7)
     trainer = IntentCNNTrainer(model)
+
+    # ── Split off a validation set ──────────────────────────────────────────────
+    train_idx, val_idx = split_train_validation(y_train, train_metadata)
+    X_val, y_val = X_train[val_idx], y_train[val_idx]
+    X_train, y_train = X_train[train_idx], y_train[train_idx]
 
     # ── Create DataLoaders ─────────────────────────────────────────────────────
     train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size, shuffle=True)

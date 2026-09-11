@@ -138,28 +138,42 @@ class PreparedData:
     test_metadata: pd.DataFrame
 
     @property
-    def imu_args(self) -> tuple[torch.Tensor, ...]:
-        """Train/test arguments for standalone IMU test helpers."""
+    def imu_args(self) -> tuple[torch.Tensor | pd.DataFrame, ...]:
+        """Train/test arguments for standalone IMU test helpers.
+
+        ``train_metadata`` is included so the test helper can carve out its
+        own stratified, group-aware validation split from the training data.
+        """
         return (
             self.X_imu_train,
             self.y_train,
             self.X_imu_test,
             self.y_test,
+            self.train_metadata,
         )
 
     @property
-    def mmg_args(self) -> tuple[torch.Tensor, ...]:
-        """Train/test arguments for standalone MMG test helpers."""
+    def mmg_args(self) -> tuple[torch.Tensor | pd.DataFrame, ...]:
+        """Train/test arguments for standalone MMG test helpers.
+
+        ``train_metadata`` is included so the test helper can carve out its
+        own stratified, group-aware validation split from the training data.
+        """
         return (
             self.X_cwt_train,
             self.y_train,
             self.X_cwt_test,
             self.y_test,
+            self.train_metadata,
         )
 
     @property
-    def fusion_args(self) -> tuple[torch.Tensor, ...]:
-        """Train/test arguments for fusion test helpers."""
+    def fusion_args(self) -> tuple[torch.Tensor | pd.DataFrame, ...]:
+        """Train/test arguments for fusion test helpers.
+
+        ``train_metadata`` is included so the test helper can carve out its
+        own stratified, group-aware validation split from the training data.
+        """
         return (
             self.X_imu_train,
             self.X_cwt_train,
@@ -167,6 +181,7 @@ class PreparedData:
             self.X_imu_test,
             self.X_cwt_test,
             self.y_test,
+            self.train_metadata,
         )
 
 

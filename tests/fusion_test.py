@@ -1,7 +1,14 @@
+import sys
+from pathlib import Path
+
 import torch
 from torch.utils.data import TensorDataset, DataLoader
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
 from fusion_cnn_model import FusionCNN, FusionCNNTrainer, FusionCNNTuner
 from fusion_gru_model import FusionGRU, FusionGRUTrainer, FusionGRUTuner
+from split_utils import split_train_validation
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -26,6 +33,7 @@ def train_and_evaluate(
     X_imu_test,
     X_cwt_test,
     y_test,
+    train_metadata,
     batch_size=32,
     intent_cnn_path=INTENT_CNN_PATH,
     gesture_cnn_path=GESTURE_CNN_PATH,
@@ -41,6 +49,8 @@ def train_and_evaluate(
         X_imu_test: Test IMU tensor of shape (M, 6, 125) from single_window input mode
         X_cwt_test: Test CWT tensor of shape (M, 5, 40, 125) from single_window input mode
         y_test: Test labels tensor of shape (M,)
+        train_metadata: Row-aligned metadata for the training tensors, used to
+            carve out a stratified, group-aware 10% validation split.
         batch_size: Batch size for DataLoaders (default: 32)
         intent_cnn_path: Path to the trained IntentCNN checkpoint
         gesture_cnn_path: Path to the trained LocomotionMMGCNN checkpoint
@@ -49,11 +59,16 @@ def train_and_evaluate(
 
     Returns:
         dict: Training histories and final validation/test results for both fusion models
-
-    Note:
-        The body still expects validation tensors and will be refactored later
-        to split validation data from the training set inside this function.
     """
+    # ── Split off a validation set ──────────────────────────────────────────────
+    train_idx, val_idx = split_train_validation(y_train, train_metadata)
+    X_imu_val, X_cwt_val, y_val = X_imu_train[val_idx], X_cwt_train[val_idx], y_train[val_idx]
+    X_imu_train, X_cwt_train, y_train = (
+        X_imu_train[train_idx],
+        X_cwt_train[train_idx],
+        y_train[train_idx],
+    )
+
     # ── Create DataLoaders ─────────────────────────────────────────────────────
     train_loader = DataLoader(
         TensorDataset(X_imu_train, X_cwt_train, y_train),
