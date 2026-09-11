@@ -317,8 +317,14 @@ class FusionCNNWindowTrainer:
         )
 
         # ── Model ───────────────────────────────────────────────────────────
-        self.model     = model.to(self.device)
-        self.criterion = nn.CrossEntropyLoss()
+        self.model = model.to(self.device)
+        class_weights = self.cfg.get("class_weights")
+        loss_weights = (
+            None
+            if class_weights is None
+            else torch.as_tensor(class_weights, dtype=torch.float32, device=self.device)
+        )
+        self.criterion = nn.CrossEntropyLoss(weight=loss_weights)
 
         # ── Optimiser (only fusion head parameters) ─────────────────────────
         trainable_params = [
@@ -377,6 +383,7 @@ class FusionCNNWindowTrainer:
             (mean_loss, accuracy, macro_f1)
         """
         self.model.train(training)
+        self.model.backbones.eval()
         total_loss = 0.0
         all_preds, all_labels = [], []
 
@@ -746,11 +753,17 @@ class FusionCNNWindowTuner:
         )
         hyperparams["batch_size"] = batch_size
         hyperparams["epochs"]     = self.search["epochs"]
+        hyperparams["class_weights"] = self.search.get("class_weights")
 
         # Rebuild DataLoaders with trial batch size
         train_ds = self.train_loader.dataset
         val_ds   = self.val_loader.dataset
-        t_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+        generator = torch.Generator().manual_seed(
+            int(self.search.get("seed", 42)) + trial.number
+        )
+        t_loader = DataLoader(
+            train_ds, batch_size=batch_size, shuffle=True, generator=generator
+        )
         v_loader = DataLoader(val_ds,   batch_size=batch_size)
 
         # ── 4. Build model + trainer ────────────────────────────────────────
@@ -776,16 +789,31 @@ class FusionCNNWindowTuner:
             raise
 
         # ── 6. Return combined metric ───────────────────────────────────────
-        val_acc = max(trainer.history["val_acc"], default=0.0)
-        val_f1  = max(trainer.history["val_f1"],  default=0.0)
-        return FusionCNNWindowTrainer._combined_metric(val_acc, val_f1)
+        scores = [
+            FusionCNNWindowTrainer._combined_metric(acc, f1)
+            for acc, f1 in zip(
+                trainer.history["val_acc"], trainer.history["val_f1"]
+            )
+        ]
+        best_index = int(np.argmax(scores))
+        trial.set_user_attr("best_epoch", best_index + 1)
+        trial.set_user_attr(
+            "validation_accuracy", trainer.history["val_acc"][best_index]
+        )
+        trial.set_user_attr(
+            "validation_macro_f1", trainer.history["val_f1"][best_index]
+        )
+        return float(scores[best_index])
 
     # ── Run the study ────────────────────────────────────────────────────────
     def run(
         self,
         n_trials:      int  = 50,
-        timeout:       int  = 3600,
+        timeout:       int | None = 3600,
         show_progress: bool = True,
+        storage: str | None = None,
+        study_name: str | None = None,
+        load_if_exists: bool = False,
     ) -> FusionCNNWindow:
         """
         Run the Optuna hyperparameter search.
@@ -802,12 +830,15 @@ class FusionCNNWindowTuner:
 
         self.study = optuna.create_study(
             direction = "maximize",
-            sampler   = TPESampler(seed=42),
+            sampler   = TPESampler(seed=int(self.search.get("seed", 42))),
             pruner    = MedianPruner(
                 n_startup_trials  = 5,
                 n_warmup_steps    = 10,
                 interval_steps    = 1,
             ),
+            storage=storage,
+            study_name=study_name,
+            load_if_exists=load_if_exists,
         )
 
         print(

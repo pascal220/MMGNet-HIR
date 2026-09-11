@@ -49,8 +49,8 @@ def _log_prepared_summary(prepared: PreparedData) -> None:
     logger.info("Pass the PreparedData object directly to the selected test entry point.")
 
 
-def _log_test_dispatch_hint(prepared: PreparedData) -> None:
-    """Log which test entry point(s) match the prepared data."""
+def _log_training_dispatch_hint(prepared: PreparedData) -> None:
+    """Log which training entry point(s) match the prepared data."""
     entry_points = _select_train_and_evaluate(prepared)
     if isinstance(entry_points, tuple):
         names = ", ".join(f"{fn.__name__}(prepared)" for fn in entry_points)
@@ -71,15 +71,15 @@ def _select_train_and_evaluate(prepared: PreparedData):
     return train_and_evaluate_imu_cnn, train_and_evaluate_mmg_cnn
 
 
-def _run_selected_tests(prepared: PreparedData) -> None:
-    """Reserve test dispatch; expensive training remains disabled for now."""
+def _run_selected_training(prepared: PreparedData) -> None:
+    """Reserve training dispatch; expensive optimization remains disabled here."""
     entry_points = _select_train_and_evaluate(prepared)
     if isinstance(entry_points, tuple):
         for train_and_evaluate in entry_points:
-            logger.info("%s test route selected (training disabled).", train_and_evaluate.__name__)
+            logger.info("%s route selected (training disabled).", train_and_evaluate.__name__)
             # train_and_evaluate(prepared)
     else:
-        logger.info("%s test route selected (training disabled).", entry_points.__name__)
+        logger.info("%s route selected (training disabled).", entry_points.__name__)
         # entry_points(prepared)
 
 
@@ -141,8 +141,8 @@ def main() -> int:
     )
 
     _log_prepared_summary(prepared)
-    _log_test_dispatch_hint(prepared)
-    # _run_selected_tests(prepared)
+    _log_training_dispatch_hint(prepared)
+    # _run_selected_training(prepared)
 
     return 0
 

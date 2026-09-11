@@ -1,7 +1,7 @@
 """Shared train/validation splitting for the train/*.py entry points.
 
 ``prepare_training_data`` only produces train/test tensors; the 10% validation
-slice used by each test-script's Optuna tuner and final training run is carved
+slice used by each training entry point's Optuna tuner and final refit is carved
 out of the training data here, at call time, rather than inside the loader.
 """
 

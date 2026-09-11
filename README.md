@@ -220,6 +220,42 @@ Five deep learning architectures are implemented and benchmarked:
 - **Gold standard generalization metric**
 - The SD–LOSO performance gap reveals subject-specificity of learned representations
 
+### Reproducible Optuna training
+
+The six public functions in `train/` cover eight model variants: standalone IMU
+and MMG CNNs plus CNN and GRU fusion models, each in single-window and windowed
+forms. Every entry point now follows the same experiment lifecycle:
+
+1. Reserve a grouped, stratified 10% validation split from the development data.
+2. Optimize architecture and training parameters with Optuna using
+	`0.5 * validation accuracy + 0.5 * validation macro-F1`.
+3. Apply class-balanced cross-entropy weights computed from training labels only.
+4. Persist the study and export its trial table and interactive visualizations.
+5. Rebuild the winning architecture and refit it on all non-test development data
+	for the winning trial's best epoch count.
+6. Save a uniquely named checkpoint and a reproducibility manifest.
+
+The test tensors are deliberately not evaluated by these training functions.
+They remain sealed for the dedicated model-evaluation workflow.
+
+Each model run is stored under `results/training/<run-id>/` and contains:
+
+| Artifact | Purpose |
+|----------|---------|
+| `<run-id>.pt` | Final model, optimizer/scheduler state, history, and training config |
+| `study.sqlite3` | Complete resumable Optuna study |
+| `trials.csv` | Portable export of all Optuna trials |
+| `manifest.json` | Model, data, split, dependency, seed, metric, and hash provenance |
+| `training_history.json` | Final all-development-data refit history |
+| `plots/*.html` | Interactive optimization history, importance, coordinate, and slice plots |
+
+Training functions accept keyword overrides including `n_trials`, `timeout`,
+`artifact_root`, `run_label`, and `resume_run_id`. Fusion entry points use
+separate `cnn_resume_run_id` and `gru_resume_run_id` values because the CNN and
+GRU searches are independent studies. Existing fixed checkpoint arguments are
+retained as compatibility aliases; the uniquely named artifact checkpoint is
+the authoritative model recorded in the manifest.
+
 ---
 
 ## 🔀 Fusion Strategies

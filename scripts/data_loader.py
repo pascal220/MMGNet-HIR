@@ -116,7 +116,7 @@ class PreparedData:
     """Model-ready train/test tensors plus row-aligned metadata.
 
     The raw resident tensors and modality-specific metadata remain available in
-    ``experiment``. Pass this object directly to the matching test-script entry
+    ``experiment``. Pass this object directly to the matching training entry
     point. The top-level tensors are transformed according to ``input_mode``:
 
         - ``windowed`` keeps all four windows per sample:

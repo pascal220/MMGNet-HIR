@@ -52,6 +52,10 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Generated model-training artifacts
+/checkpoints/
+/results/training/
+
 # Translations
 *.mo
 *.pot
