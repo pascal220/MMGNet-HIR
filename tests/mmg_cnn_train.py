@@ -6,37 +6,45 @@ from torch.utils.data import TensorDataset, DataLoader
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "models"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from imu_cnn_model import IntentCNN, IntentCNNTrainer, IntentCNNTuner
+from mmg_cnn_model import LocomotionMMGCNN, LocomotionMMGCNNTrainer, LocomotionMMGCNNTuner
 from data_loader import PreparedData
 from split_utils import split_train_validation, validate_prepared_data
 
 
-def train_and_evaluate(
+# ── Configuration ────────────────────────────────────────────────────────────
+IN_CHANNELS  = 5
+NUM_CLASSES  = 7
+N_TRIALS     = 50
+TIMEOUT      = 3600    # 1 hour
+TRAIN_EPOCHS = 100     # final training after Optuna
+
+
+def train_and_evaluate_mmg_cnn(
     prepared: PreparedData,
     batch_size: int | None = None,
-    checkpoint_path="checkpoints/intent_cnn.pt",
+    checkpoint_path="checkpoints/best_mmg_cnn.pt",
 ):
-    """Train and evaluate the single-window Intent CNN model.
-    
+    """Train and evaluate the single-window Locomotion MMG CNN model.
+
     Args:
         prepared: Single-window standalone tensors and row-aligned metadata.
         batch_size: Optional DataLoader batch-size override.
-        checkpoint_path: Path to save/load model checkpoint (default: "checkpoints/intent_cnn.pt")
-    
+        checkpoint_path: Path to save/load model checkpoint (default: "checkpoints/best_mmg_cnn.pt")
+
     Returns:
-        dict: Training history from the trainer
+        dict: Training history and final validation/test results from the trainer
     """
     validate_prepared_data(prepared, "single_window", "standalone")
     if batch_size is None:
         batch_size = prepared.experiment.config.batch_size
-    X_train = prepared.X_imu_train
+    X_train = prepared.X_cwt_train
     y_train = prepared.y_train
-    X_test = prepared.X_imu_test
+    X_test = prepared.X_cwt_test
     y_test = prepared.y_test
 
     # ── Build model ────────────────────────────────────────────────────────────
-    model   = IntentCNN(in_channels=6, num_classes=7)
-    trainer = IntentCNNTrainer(model)
+    model   = LocomotionMMGCNN(in_channels=IN_CHANNELS, num_classes=NUM_CLASSES)
+    trainer = LocomotionMMGCNNTrainer(model)
 
     # ── Split off a validation set ──────────────────────────────────────────────
     train_idx, val_idx = split_train_validation(y_train, prepared.train_metadata)
@@ -48,26 +56,37 @@ def train_and_evaluate(
     val_loader   = DataLoader(TensorDataset(X_val,   y_val),   batch_size=batch_size)
 
     # ── Run Optuna search ───────────────────────────────────────────────────────
-    tuner      = IntentCNNTuner(train_loader, val_loader)
-    best_model = tuner.run(n_trials=50, timeout=3600)
+    tuner      = LocomotionMMGCNNTuner(train_loader, val_loader,
+                                  in_channels=IN_CHANNELS,
+                                  num_classes=NUM_CLASSES)
+    best_model = tuner.run(n_trials=N_TRIALS, timeout=TIMEOUT)
 
     # ── Inspect results ─────────────────────────────────────────────────────────
     best_params = tuner.get_best_params()
-    tuner.plot_results(save_dir="optuna_plots")
+    tuner.plot_results(save_dir="optuna_plots_dacnn")
 
     # ── Train final model with best params ─────────────────────────────────────
-    trainer = IntentCNNTrainer(best_model, best_params)
-    history = trainer.fit(train_loader, val_loader)
+    trainer = LocomotionMMGCNNTrainer(best_model, best_params)
+    history = trainer.fit(
+        train_loader,
+        val_loader,
+        epochs  = TRAIN_EPOCHS,
+        verbose = True,
+    )
 
     # ── Evaluate ────────────────────────────────────────────────────────────────
-    trainer.evaluate(val_loader)
-    test_loader  = DataLoader(TensorDataset(X_test,  y_test),  batch_size=batch_size)
-    trainer.evaluate(test_loader)
+    val_results = trainer.evaluate(val_loader)
+    test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=batch_size)
+    test_results = trainer.evaluate(test_loader)
 
     # ── Inference ───────────────────────────────────────────────────────────────
     #TODO: Implement inference logic here, e.g., using trainer.predict() on new data
 
     # ── Save / Load ─────────────────────────────────────────────────────────────
     trainer.save(checkpoint_path)
-    
-    return history
+
+    return {
+        "history": history,
+        "val_results": val_results,
+        "test_results": test_results,
+    }

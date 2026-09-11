@@ -37,7 +37,7 @@ FUSION_CNN_PATH  = "checkpoints/best_window_fusion_cnn.pt"
 FUSION_GRU_PATH  = "checkpoints/best_window_fusion_gru.pt"
 
 
-def train_and_evaluate(
+def train_and_evaluate_fusion_windows(
     prepared: PreparedData,
     batch_size: int | None = None,
     intent_cnn_path=INTENT_CNN_PATH,

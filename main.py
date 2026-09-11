@@ -7,6 +7,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
 from data_loader import PreparedData, prepare_experiment_data, prepare_training_data
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "tests"))
+
+from fusion_train import train_and_evaluate_fusion
+from fusion_windows_train import train_and_evaluate_fusion_windows
+from imu_cnn_train import train_and_evaluate_imu_cnn
+from imu_cnn_windows_train import train_and_evaluate_imu_cnn_windows
+from mmg_cnn_train import train_and_evaluate_mmg_cnn
+from mmg_cnn_windows_train import train_and_evaluate_mmg_cnn_windows
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,40 +50,37 @@ def _log_prepared_summary(prepared: PreparedData) -> None:
 
 
 def _log_test_dispatch_hint(prepared: PreparedData) -> None:
-    """Log which test entry points match the prepared data."""
-    if prepared.model_target == "fusion":
-        logger.info("The selected fusion test entry point accepts train_and_evaluate(prepared).")
-        return
+    """Log which test entry point(s) match the prepared data."""
+    entry_points = _select_train_and_evaluate(prepared)
+    if isinstance(entry_points, tuple):
+        names = ", ".join(f"{fn.__name__}(prepared)" for fn in entry_points)
+    else:
+        names = f"{entry_points.__name__}(prepared)"
+    logger.info("Matching entry point(s): %s.", names)
 
-    logger.info("The selected IMU test entry point accepts train_and_evaluate(prepared).")
-    logger.info("The selected MMG test entry point accepts train_and_evaluate(prepared).")
+
+def _select_train_and_evaluate(prepared: PreparedData):
+    """Pick the training entry point matching input_mode and model_target."""
+    if prepared.input_mode == "windowed":
+        if prepared.model_target == "fusion":
+            return train_and_evaluate_fusion_windows
+        return train_and_evaluate_imu_cnn_windows, train_and_evaluate_mmg_cnn_windows
+
+    if prepared.model_target == "fusion":
+        return train_and_evaluate_fusion
+    return train_and_evaluate_imu_cnn, train_and_evaluate_mmg_cnn
 
 
 def _run_selected_tests(prepared: PreparedData) -> None:
     """Reserve test dispatch; expensive training remains disabled for now."""
-    if prepared.input_mode == "windowed":
-        if prepared.model_target == "fusion":
-            # from tests.fusion_windows_test import train_and_evaluate
+    entry_points = _select_train_and_evaluate(prepared)
+    if isinstance(entry_points, tuple):
+        for train_and_evaluate in entry_points:
+            logger.info("%s test route selected (training disabled).", train_and_evaluate.__name__)
             # train_and_evaluate(prepared)
-            logger.info("Windowed fusion test route selected (training disabled).")
-        else:
-            # from tests.imu_cnn_windows_test import train_and_evaluate as train_imu
-            # from tests.mmg_cnn_windows_test import train_and_evaluate as train_mmg
-            # train_imu(prepared)
-            # train_mmg(prepared)
-            logger.info("Windowed standalone test routes selected (training disabled).")
-        return
-
-    if prepared.model_target == "fusion":
-        # from tests.fusion_test import train_and_evaluate
-        # train_and_evaluate(prepared)
-        logger.info("Single-window fusion test route selected (training disabled).")
     else:
-        # from tests.imu_cnn_test import train_and_evaluate as train_imu
-        # from tests.mmg_cnn_test import train_and_evaluate as train_mmg
-        # train_imu(prepared)
-        # train_mmg(prepared)
-        logger.info("Single-window standalone test routes selected (training disabled).")
+        logger.info("%s test route selected (training disabled).", entry_points.__name__)
+        # entry_points(prepared)
 
 
 def main() -> int:
