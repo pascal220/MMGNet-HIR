@@ -1,14 +1,15 @@
 import sys
 from pathlib import Path
 
-import torch
 from torch.utils.data import TensorDataset, DataLoader
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "models"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from fusion_cnn_model import FusionCNN, FusionCNNTrainer, FusionCNNTuner
 from fusion_gru_model import FusionGRU, FusionGRUTrainer, FusionGRUTuner
-from split_utils import split_train_validation
+from data_loader import PreparedData
+from split_utils import split_train_validation, validate_prepared_data
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -27,14 +28,8 @@ FUSION_GRU_PATH  = "checkpoints/best_fusion_gru.pt"
 
 
 def train_and_evaluate(
-    X_imu_train,
-    X_cwt_train,
-    y_train,
-    X_imu_test,
-    X_cwt_test,
-    y_test,
-    train_metadata,
-    batch_size=32,
+    prepared: PreparedData,
+    batch_size: int | None = None,
     intent_cnn_path=INTENT_CNN_PATH,
     gesture_cnn_path=GESTURE_CNN_PATH,
     fusion_cnn_checkpoint_path=FUSION_CNN_PATH,
@@ -43,15 +38,8 @@ def train_and_evaluate(
     """Train and evaluate single-window FusionCNN and FusionGRU models.
 
     Args:
-        X_imu_train: Training IMU tensor of shape (N, 6, 125) from single_window input mode
-        X_cwt_train: Training CWT tensor of shape (N, 5, 40, 125) from single_window input mode
-        y_train: Training labels tensor of shape (N,)
-        X_imu_test: Test IMU tensor of shape (M, 6, 125) from single_window input mode
-        X_cwt_test: Test CWT tensor of shape (M, 5, 40, 125) from single_window input mode
-        y_test: Test labels tensor of shape (M,)
-        train_metadata: Row-aligned metadata for the training tensors, used to
-            carve out a stratified, group-aware 10% validation split.
-        batch_size: Batch size for DataLoaders (default: 32)
+        prepared: Single-window fusion tensors and row-aligned metadata.
+        batch_size: Optional DataLoader batch-size override.
         intent_cnn_path: Path to the trained IntentCNN checkpoint
         gesture_cnn_path: Path to the trained LocomotionMMGCNN checkpoint
         fusion_cnn_checkpoint_path: Path to save/load the FusionCNN checkpoint
@@ -60,8 +48,18 @@ def train_and_evaluate(
     Returns:
         dict: Training histories and final validation/test results for both fusion models
     """
+    validate_prepared_data(prepared, "single_window", "fusion")
+    if batch_size is None:
+        batch_size = prepared.experiment.config.batch_size
+    X_imu_train = prepared.X_imu_train
+    X_cwt_train = prepared.X_cwt_train
+    y_train = prepared.y_train
+    X_imu_test = prepared.X_imu_test
+    X_cwt_test = prepared.X_cwt_test
+    y_test = prepared.y_test
+
     # ── Split off a validation set ──────────────────────────────────────────────
-    train_idx, val_idx = split_train_validation(y_train, train_metadata)
+    train_idx, val_idx = split_train_validation(y_train, prepared.train_metadata)
     X_imu_val, X_cwt_val, y_val = X_imu_train[val_idx], X_cwt_train[val_idx], y_train[val_idx]
     X_imu_train, X_cwt_train, y_train = (
         X_imu_train[train_idx],

@@ -1,45 +1,45 @@
 import sys
 from pathlib import Path
 
-import torch
 from torch.utils.data import TensorDataset, DataLoader
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "models"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from imu_cnn_model import IntentCNN, IntentCNNTrainer, IntentCNNTuner
-from split_utils import split_train_validation
+from data_loader import PreparedData
+from split_utils import split_train_validation, validate_prepared_data
 
 
 def train_and_evaluate(
-    X_train,
-    y_train,
-    X_test,
-    y_test,
-    train_metadata,
-    batch_size=32,
+    prepared: PreparedData,
+    batch_size: int | None = None,
     checkpoint_path="checkpoints/intent_cnn.pt",
 ):
     """Train and evaluate the single-window Intent CNN model.
     
     Args:
-        X_train: Training input tensor of shape (N, 6, 125) from single_window input mode
-        y_train: Training labels tensor of shape (N,)
-        X_test: Test input tensor of shape (M, 6, 125) from single_window input mode
-        y_test: Test labels tensor of shape (M,)
-        train_metadata: Row-aligned metadata for X_train/y_train, used to carve
-            out a stratified, group-aware 10% validation split.
-        batch_size: Batch size for DataLoaders (default: 32)
+        prepared: Single-window standalone tensors and row-aligned metadata.
+        batch_size: Optional DataLoader batch-size override.
         checkpoint_path: Path to save/load model checkpoint (default: "checkpoints/intent_cnn.pt")
     
     Returns:
         dict: Training history from the trainer
     """
+    validate_prepared_data(prepared, "single_window", "standalone")
+    if batch_size is None:
+        batch_size = prepared.experiment.config.batch_size
+    X_train = prepared.X_imu_train
+    y_train = prepared.y_train
+    X_test = prepared.X_imu_test
+    y_test = prepared.y_test
+
     # ── Build model ────────────────────────────────────────────────────────────
     model   = IntentCNN(in_channels=6, num_classes=7)
     trainer = IntentCNNTrainer(model)
 
     # ── Split off a validation set ──────────────────────────────────────────────
-    train_idx, val_idx = split_train_validation(y_train, train_metadata)
+    train_idx, val_idx = split_train_validation(y_train, prepared.train_metadata)
     X_val, y_val = X_train[val_idx], y_train[val_idx]
     X_train, y_train = X_train[train_idx], y_train[train_idx]
 

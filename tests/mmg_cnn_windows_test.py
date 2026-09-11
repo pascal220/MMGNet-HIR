@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 
-import torch
 from torch.utils.data import TensorDataset, DataLoader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "models"))
@@ -12,7 +11,8 @@ from mmg_cnn_window_model import (
     LocomotionMMGCNNWindowTrainer,
     LocomotionMMGCNNWindowTuner,
 )
-from split_utils import split_train_validation
+from data_loader import PreparedData
+from split_utils import split_train_validation, validate_prepared_data
 
 
 # Windowed input shape: (batch, 5, 40, 125, 4)
@@ -24,30 +24,29 @@ TRAIN_EPOCHS = 100
 
 
 def train_and_evaluate(
-    X_train,
-    y_train,
-    X_test,
-    y_test,
-    train_metadata,
-    batch_size=32,
+    prepared: PreparedData,
+    batch_size: int | None = None,
     checkpoint_path="checkpoints/best_window_mmg_cnn.pt",
 ):
     """Train and evaluate the windowed LocomotionMMGCNNWindow model.
 
     Args:
-        X_train: Tensor shaped (N, 5, 40, 125, 4).
-        y_train: Labels shaped (N,).
-        X_test: Test tensor shaped (K, 5, 40, 125, 4).
-        y_test: Test labels shaped (K,).
-        train_metadata: Row-aligned metadata for X_train/y_train, used to carve
-            out a stratified, group-aware 10% validation split.
-        batch_size: Batch size for DataLoaders.
+        prepared: Windowed standalone tensors and row-aligned metadata.
+        batch_size: Optional DataLoader batch-size override.
         checkpoint_path: Output checkpoint path.
 
     Returns:
         dict: Training history and validation/test metrics.
     """
-    train_idx, val_idx = split_train_validation(y_train, train_metadata)
+    validate_prepared_data(prepared, "windowed", "standalone")
+    if batch_size is None:
+        batch_size = prepared.experiment.config.batch_size
+    X_train = prepared.X_cwt_train
+    y_train = prepared.y_train
+    X_test = prepared.X_cwt_test
+    y_test = prepared.y_test
+
+    train_idx, val_idx = split_train_validation(y_train, prepared.train_metadata)
     X_val, y_val = X_train[val_idx], y_train[val_idx]
     X_train, y_train = X_train[train_idx], y_train[train_idx]
 

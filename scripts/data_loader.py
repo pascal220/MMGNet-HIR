@@ -116,8 +116,8 @@ class PreparedData:
     """Model-ready train/test tensors plus row-aligned metadata.
 
     The raw resident tensors and modality-specific metadata remain available in
-    ``experiment``. The top-level tensors are transformed according to
-    ``input_mode``:
+    ``experiment``. Pass this object directly to the matching test-script entry
+    point. The top-level tensors are transformed according to ``input_mode``:
 
         - ``windowed`` keeps all four windows per sample:
             IMU ``(N, 6, 125, 4)``, MMG/CWT ``(N, 5, 40, 125, 4)``.
@@ -136,53 +136,6 @@ class PreparedData:
     y_test: torch.Tensor
     train_metadata: pd.DataFrame
     test_metadata: pd.DataFrame
-
-    @property
-    def imu_args(self) -> tuple[torch.Tensor | pd.DataFrame, ...]:
-        """Train/test arguments for standalone IMU test helpers.
-
-        ``train_metadata`` is included so the test helper can carve out its
-        own stratified, group-aware validation split from the training data.
-        """
-        return (
-            self.X_imu_train,
-            self.y_train,
-            self.X_imu_test,
-            self.y_test,
-            self.train_metadata,
-        )
-
-    @property
-    def mmg_args(self) -> tuple[torch.Tensor | pd.DataFrame, ...]:
-        """Train/test arguments for standalone MMG test helpers.
-
-        ``train_metadata`` is included so the test helper can carve out its
-        own stratified, group-aware validation split from the training data.
-        """
-        return (
-            self.X_cwt_train,
-            self.y_train,
-            self.X_cwt_test,
-            self.y_test,
-            self.train_metadata,
-        )
-
-    @property
-    def fusion_args(self) -> tuple[torch.Tensor | pd.DataFrame, ...]:
-        """Train/test arguments for fusion test helpers.
-
-        ``train_metadata`` is included so the test helper can carve out its
-        own stratified, group-aware validation split from the training data.
-        """
-        return (
-            self.X_imu_train,
-            self.X_cwt_train,
-            self.y_train,
-            self.X_imu_test,
-            self.X_cwt_test,
-            self.y_test,
-            self.train_metadata,
-        )
 
 
 def _select_experiment_data(

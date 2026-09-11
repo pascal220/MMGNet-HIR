@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -17,10 +18,28 @@ from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from data_loader import IMU_SOURCE_FILE
+from data_loader import IMU_SOURCE_FILE, PreparedData
 from datasets import SOURCE_SAMPLE_INDEX
 
 GROUP_COLUMNS = [IMU_SOURCE_FILE, SOURCE_SAMPLE_INDEX]
+
+
+def validate_prepared_data(
+    prepared: PreparedData,
+    expected_input_mode: Literal["single_window", "windowed"],
+    expected_model_target: Literal["standalone", "fusion"],
+) -> None:
+    """Reject prepared data intended for a different test entry point."""
+    if prepared.input_mode != expected_input_mode:
+        raise ValueError(
+            f"Expected input_mode={expected_input_mode!r}, "
+            f"got {prepared.input_mode!r}."
+        )
+    if prepared.model_target != expected_model_target:
+        raise ValueError(
+            f"Expected model_target={expected_model_target!r}, "
+            f"got {prepared.model_target!r}."
+        )
 
 
 def split_train_validation(

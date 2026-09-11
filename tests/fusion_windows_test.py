@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 
-import torch
 from torch.utils.data import TensorDataset, DataLoader
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "models"))
@@ -17,7 +16,8 @@ from fusion_gru_window_model import (
     FusionGRUWindowTrainer,
     FusionGRUWindowTuner,
 )
-from split_utils import split_train_validation
+from data_loader import PreparedData
+from split_utils import split_train_validation, validate_prepared_data
 
 
 # Windowed input shapes:
@@ -38,14 +38,8 @@ FUSION_GRU_PATH  = "checkpoints/best_window_fusion_gru.pt"
 
 
 def train_and_evaluate(
-    X_imu_train,
-    X_cwt_train,
-    y_train,
-    X_imu_test,
-    X_cwt_test,
-    y_test,
-    train_metadata,
-    batch_size=32,
+    prepared: PreparedData,
+    batch_size: int | None = None,
     intent_cnn_path=INTENT_CNN_PATH,
     gesture_cnn_path=GESTURE_CNN_PATH,
     fusion_cnn_checkpoint_path=FUSION_CNN_PATH,
@@ -54,15 +48,8 @@ def train_and_evaluate(
     """Train and evaluate windowed FusionCNNWindow and FusionGRUWindow models.
 
     Args:
-        X_imu_train: IMU tensor shaped (N, 6, 125, 4).
-        X_cwt_train: MMG/CWT tensor shaped (N, 5, 40, 125, 4).
-        y_train: Training labels shaped (N,).
-        X_imu_test: Test IMU tensor shaped (K, 6, 125, 4).
-        X_cwt_test: Test MMG/CWT tensor shaped (K, 5, 40, 125, 4).
-        y_test: Test labels shaped (K,).
-        train_metadata: Row-aligned metadata for the training tensors, used to
-            carve out a stratified, group-aware 10% validation split.
-        batch_size: Batch size for DataLoaders.
+        prepared: Windowed fusion tensors and row-aligned metadata.
+        batch_size: Optional DataLoader batch-size override.
         intent_cnn_path: Path to the windowed IntentCNN checkpoint.
         gesture_cnn_path: Path to the windowed MMGCNN checkpoint.
         fusion_cnn_checkpoint_path: FusionCNNWindow output checkpoint.
@@ -71,7 +58,17 @@ def train_and_evaluate(
     Returns:
         dict: Training histories and validation/test metrics for both models.
     """
-    train_idx, val_idx = split_train_validation(y_train, train_metadata)
+    validate_prepared_data(prepared, "windowed", "fusion")
+    if batch_size is None:
+        batch_size = prepared.experiment.config.batch_size
+    X_imu_train = prepared.X_imu_train
+    X_cwt_train = prepared.X_cwt_train
+    y_train = prepared.y_train
+    X_imu_test = prepared.X_imu_test
+    X_cwt_test = prepared.X_cwt_test
+    y_test = prepared.y_test
+
+    train_idx, val_idx = split_train_validation(y_train, prepared.train_metadata)
     X_imu_val, X_cwt_val, y_val = X_imu_train[val_idx], X_cwt_train[val_idx], y_train[val_idx]
     X_imu_train, X_cwt_train, y_train = (
         X_imu_train[train_idx],

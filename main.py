@@ -37,48 +37,44 @@ def _log_prepared_summary(prepared: PreparedData) -> None:
     logger.info("Train metadata rows : %d", len(prepared.train_metadata))
     logger.info("Test metadata rows  : %d", len(prepared.test_metadata))
 
-    if prepared.model_target == "fusion":
-        logger.info("Prepared fusion arguments are available as prepared.fusion_args.")
-    else:
-        logger.info("Prepared standalone IMU arguments are available as prepared.imu_args.")
-        logger.info("Prepared standalone MMG arguments are available as prepared.mmg_args.")
+    logger.info("Pass the PreparedData object directly to the selected test entry point.")
 
 
 def _log_test_dispatch_hint(prepared: PreparedData) -> None:
-    """Log which test entry points will be called after their bodies are refactored."""
+    """Log which test entry points match the prepared data."""
     if prepared.model_target == "fusion":
-        logger.info("Next refactor will route to tests.fusion_test.train_and_evaluate(*prepared.fusion_args).")
+        logger.info("The selected fusion test entry point accepts train_and_evaluate(prepared).")
         return
 
-    logger.info("Next refactor will route to tests.imu_cnn_test.train_and_evaluate(*prepared.imu_args).")
-    logger.info("Next refactor will route to tests.mmg_cnn_test.train_and_evaluate(*prepared.mmg_args).")
+    logger.info("The selected IMU test entry point accepts train_and_evaluate(prepared).")
+    logger.info("The selected MMG test entry point accepts train_and_evaluate(prepared).")
 
 
 def _run_selected_tests(prepared: PreparedData) -> None:
-    """Reserve the future test dispatch; execution remains disabled for now."""
+    """Reserve test dispatch; expensive training remains disabled for now."""
     if prepared.input_mode == "windowed":
         if prepared.model_target == "fusion":
             # from tests.fusion_windows_test import train_and_evaluate
-            # train_and_evaluate(*prepared.fusion_args)
-            logger.info("Windowed fusion test route selected (disabled until test body refactor).")
+            # train_and_evaluate(prepared)
+            logger.info("Windowed fusion test route selected (training disabled).")
         else:
             # from tests.imu_cnn_windows_test import train_and_evaluate as train_imu
             # from tests.mmg_cnn_windows_test import train_and_evaluate as train_mmg
-            # train_imu(*prepared.imu_args)
-            # train_mmg(*prepared.mmg_args)
-            logger.info("Windowed standalone test routes selected (disabled until test body refactor).")
+            # train_imu(prepared)
+            # train_mmg(prepared)
+            logger.info("Windowed standalone test routes selected (training disabled).")
         return
 
     if prepared.model_target == "fusion":
         # from tests.fusion_test import train_and_evaluate
-        # train_and_evaluate(*prepared.fusion_args)
-        logger.info("Single-window fusion test route selected (disabled until test body refactor).")
+        # train_and_evaluate(prepared)
+        logger.info("Single-window fusion test route selected (training disabled).")
     else:
         # from tests.imu_cnn_test import train_and_evaluate as train_imu
         # from tests.mmg_cnn_test import train_and_evaluate as train_mmg
-        # train_imu(*prepared.imu_args)
-        # train_mmg(*prepared.mmg_args)
-        logger.info("Single-window standalone test routes selected (disabled until test body refactor).")
+        # train_imu(prepared)
+        # train_mmg(prepared)
+        logger.info("Single-window standalone test routes selected (training disabled).")
 
 
 def main() -> int:
