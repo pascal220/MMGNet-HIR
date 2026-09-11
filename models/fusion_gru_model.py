@@ -34,6 +34,7 @@ from torch.utils.data import DataLoader
 
 from imu_cnn_model   import IntentCNN
 from mmg_cnn_model import LocomotionMMGCNN
+from device_utils import resolve_device
 
 # Optuna visualisation
 try:
@@ -186,10 +187,7 @@ class FusionGRU(nn.Module):
     ):
         super().__init__()
 
-        device = device or (
-            torch.device("cuda") if torch.cuda.is_available()
-            else torch.device("cpu")
-        )
+        device = resolve_device(device)
 
         # ── Frozen backbones ─────────────────────────────────────────────────
         self.backbones = _FrozenBackbones(
@@ -294,10 +292,7 @@ class FusionGRUTrainer:
     ):
         self.cfg = {**self._DEFAULTS, **(hyperparams or {})}
 
-        self.device = (
-            torch.device("cuda") if torch.cuda.is_available()
-            else torch.device("cpu")
-        )
+        self.device = resolve_device(self.cfg.get("device", "auto"))
         print(f"[FusionGRUTrainer] Using device: {self.device}")
 
         self.model = model.to(self.device)
@@ -560,10 +555,7 @@ class FusionGRUTuner:
         self.num_classes      = num_classes
         self.search           = {**self._SEARCH, **(search_space or {})}
 
-        self.device = (
-            torch.device("cuda") if torch.cuda.is_available()
-            else torch.device("cpu")
-        )
+        self.device = resolve_device(self.search.get("device", "auto"))
 
         self.study        = None
         self._best_model  = None
@@ -623,6 +615,7 @@ class FusionGRUTuner:
         hyperparams["batch_size"] = batch_size
         hyperparams["epochs"]     = self.search["epochs"]
         hyperparams["class_weights"] = self.search.get("class_weights")
+        hyperparams["device"] = str(self.device)
 
         generator = torch.Generator().manual_seed(
             int(self.search.get("seed", 42)) + trial.number
@@ -632,9 +625,11 @@ class FusionGRUTuner:
             batch_size=batch_size,
             shuffle=True,
             generator=generator,
+            pin_memory=self.device.type == "cuda",
         )
         v_loader = DataLoader(
-            self.val_loader.dataset, batch_size=batch_size
+            self.val_loader.dataset, batch_size=batch_size,
+            pin_memory=self.device.type == "cuda",
         )
 
         model = FusionGRU(

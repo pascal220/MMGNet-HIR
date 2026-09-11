@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import platform
 import random
 import re
@@ -36,10 +37,12 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from data_loader import PreparedData
 from dataset_registry import LABEL_TO_CLASS
+from device_utils import describe_device, device_details, normalize_device_request, resolve_device
 from split_utils import GROUP_COLUMNS, split_train_validation
 
 NUM_CLASSES = 7
 OBJECTIVE_NAME = "0.5 * validation_accuracy + 0.5 * validation_macro_f1"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,7 @@ class TrainingRunConfig:
     val_fraction: float = 0.10
     seed: int = 42
     show_progress: bool = True
+    device: str = "auto"
 
     def validate(self) -> None:
         if self.n_trials < 1:
@@ -62,6 +66,7 @@ class TrainingRunConfig:
             raise ValueError("timeout must be positive or None.")
         if not 0 < self.val_fraction < 1:
             raise ValueError("val_fraction must be between 0 and 1.")
+        normalize_device_request(self.device)
 
 
 @dataclass(frozen=True)
@@ -392,6 +397,9 @@ def run_training_experiment(
     """Tune and refit one model without accessing the reserved test tensors."""
     run_config = config or TrainingRunConfig(seed=prepared.experiment.config.seed)
     run_config.validate()
+    device = resolve_device(run_config.device)
+    runtime_device = device_details(run_config.device, device)
+    logger.info("Compute device: %s", describe_device(runtime_device))
     started_at = datetime.now(timezone.utc)
     started_clock = time.perf_counter()
     if any(len(tensor) != len(prepared.y_train) for tensor in input_tensors):
@@ -426,19 +434,30 @@ def run_training_experiment(
         nested_inputs,
     )
     loader_batch_size = initial_batch_size or prepared.experiment.config.batch_size
+    pin_memory = device.type == "cuda"
     train_loader = DataLoader(
         train_dataset,
         batch_size=loader_batch_size,
         shuffle=True,
         num_workers=0,
+        pin_memory=pin_memory,
         generator=torch.Generator().manual_seed(run_config.seed),
     )
-    val_loader = DataLoader(val_dataset, batch_size=loader_batch_size, num_workers=0)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=loader_batch_size,
+        num_workers=0,
+        pin_memory=pin_memory,
+    )
 
     tuner = tuner_factory(
         train_loader,
         val_loader,
-        {"class_weights": search_weights, "seed": run_config.seed},
+        {
+            "class_weights": search_weights,
+            "seed": run_config.seed,
+            "device": str(device),
+        },
     )
     storage = sqlite_url(artifacts.study_database)
     tuner.run(
@@ -470,12 +489,14 @@ def run_training_experiment(
         class_weights=final_weights,
         fixed_params=tuner.search,
     )
+    training_params["device"] = str(device)
     final_dataset = _make_dataset(input_tensors, prepared.y_train, nested_inputs)
     final_loader = DataLoader(
         final_dataset,
         batch_size=int(training_params["batch_size"]),
         shuffle=True,
         num_workers=0,
+        pin_memory=pin_memory,
         generator=torch.Generator().manual_seed(run_config.seed),
     )
     seed_everything(run_config.seed)
@@ -548,7 +569,7 @@ def run_training_experiment(
             "search_space": {
                 key: value
                 for key, value in tuner.search.items()
-                if key not in {"class_weights", "seed"}
+                if key not in {"class_weights", "device", "seed"}
             },
             "raw_best_params": best_trial.params,
             "selection": selection,
@@ -574,6 +595,7 @@ def run_training_experiment(
             "torch": torch.__version__,
             "cuda_available": torch.cuda.is_available(),
             "cuda_version": torch.version.cuda,
+            "compute_device": runtime_device,
             "optuna": _package_version("optuna"),
             "numpy": np.__version__,
             "pandas": pd.__version__,

@@ -21,6 +21,7 @@ def train_and_evaluate_imu_cnn_windows(
     run_label: str | None = None,
     resume_run_id: str | None = None,
     show_progress: bool = True,
+    device: str = "auto",
 ):
     """Tune and refit a windowed IMU CNN without accessing test data."""
     validate_prepared_data(prepared, "windowed", "standalone")
@@ -32,6 +33,7 @@ def train_and_evaluate_imu_cnn_windows(
         resume_run_id=resume_run_id,
         seed=prepared.experiment.config.seed,
         show_progress=show_progress,
+        device=device,
     )
     return run_training_experiment(
         prepared=prepared,

@@ -32,6 +32,7 @@ def train_and_evaluate_fusion_windows(
     cnn_resume_run_id: str | None = None,
     gru_resume_run_id: str | None = None,
     show_progress: bool = True,
+    device: str = "auto",
 ):
     """Tune and refit windowed FusionCNN and FusionGRU models.
 
@@ -55,6 +56,7 @@ def train_and_evaluate_fusion_windows(
         resume_run_id=cnn_resume_run_id,
         seed=prepared.experiment.config.seed,
         show_progress=show_progress,
+        device=device,
     )
     cnn_result = run_training_experiment(
         **common,
@@ -80,6 +82,7 @@ def train_and_evaluate_fusion_windows(
         resume_run_id=gru_resume_run_id,
         seed=prepared.experiment.config.seed,
         show_progress=show_progress,
+        device=device,
     )
     gru_result = run_training_experiment(
         **common,

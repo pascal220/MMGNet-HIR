@@ -269,6 +269,13 @@ class TrainingExperimentTests(unittest.TestCase):
 
     def test_runner_persists_artifacts_without_accessing_test_data(self) -> None:
         prepared = _TestSealedPrepared()
+        observed_loaders: list[tuple[bool, bool]] = []
+
+        def tuner_factory(train, val, search):
+            observed_loaders.append((train.pin_memory, val.pin_memory))
+            self.assertEqual(search["device"], "cpu")
+            return _TinyTuner(train, val, search)
+
         with tempfile.TemporaryDirectory() as directory:
             with (
                 patch("training_experiment.plot_optimization_history", return_value=_FakeFigure()),
@@ -280,13 +287,14 @@ class TrainingExperimentTests(unittest.TestCase):
                     prepared=prepared,
                     model_key="tiny_model",
                     input_tensors=(prepared.X_imu_train,),
-                    tuner_factory=lambda train, val, search: _TinyTuner(train, val, search),
+                    tuner_factory=tuner_factory,
                     trainer_factory=_TinyTrainer,
                     config=TrainingRunConfig(
                         n_trials=1,
                         timeout=None,
                         artifact_root=directory,
                         show_progress=False,
+                        device="cpu",
                     ),
                 )
 
@@ -300,6 +308,10 @@ class TrainingExperimentTests(unittest.TestCase):
             self.assertFalse(manifest["data"]["test_set_accessed"])
             self.assertEqual(manifest["optimization"]["selection"]["best_epoch"], 2)
             self.assertEqual(manifest["final_refit"]["training_params"]["batch_size"], 8)
+            self.assertEqual(manifest["final_refit"]["training_params"]["device"], "cpu")
+            self.assertEqual(manifest["environment"]["compute_device"]["requested"], "cpu")
+            self.assertEqual(manifest["environment"]["compute_device"]["resolved"], "cpu")
+            self.assertEqual(observed_loaders, [(False, False)])
             self.assertEqual(len(list((run_dir / "plots").glob("*.html"))), 4)
 
             with (
@@ -312,7 +324,7 @@ class TrainingExperimentTests(unittest.TestCase):
                     prepared=prepared,
                     model_key="tiny_model",
                     input_tensors=(prepared.X_imu_train,),
-                    tuner_factory=lambda train, val, search: _TinyTuner(train, val, search),
+                    tuner_factory=tuner_factory,
                     trainer_factory=_TinyTrainer,
                     config=TrainingRunConfig(
                         n_trials=1,
@@ -320,6 +332,7 @@ class TrainingExperimentTests(unittest.TestCase):
                         artifact_root=directory,
                         resume_run_id=result["run_id"],
                         show_progress=False,
+                        device="cpu",
                     ),
                 )
 

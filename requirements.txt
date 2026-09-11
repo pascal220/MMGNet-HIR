@@ -10,5 +10,6 @@ optuna>=3.0.0
 plotly>=5.0.0
 scikit-learn>=1.2.0
 
-# Optional: For CUDA-enabled PyTorch, install the matching wheel separately:
-# pip install torch --index-url https://download.pytorch.org/whl/cu118
+# NVIDIA GPU support requires a CUDA-enabled PyTorch wheel. Select the command
+# matching the installed NVIDIA driver at https://pytorch.org/get-started/locally/
+# before installing the remaining dependencies from this file.

@@ -27,6 +27,8 @@ import numpy as np
 from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
 
+from device_utils import resolve_device
+
 # Optuna visualisation (requires optuna[visualization] and plotly)
 try:
     from optuna.visualization import (
@@ -289,11 +291,7 @@ class LocomotionMMGCNNTrainer:
         self.cfg = {**self._SGD_DEFAULTS, **(hyperparams or {})}
 
         # ── Device ───────────────────────────────────────────────────────────
-        self.device = (
-            torch.device("cuda")
-            if torch.cuda.is_available()
-            else torch.device("cpu")
-        )
+        self.device = resolve_device(self.cfg.get("device", "auto"))
         print(f"[LocomotionMMGCNNTrainer] Using device: {self.device}")
 
         # ── Model ────────────────────────────────────────────────────────────
@@ -621,6 +619,7 @@ class LocomotionMMGCNNTuner:
         self.in_channels  = in_channels
         self.num_classes  = num_classes
         self.search       = {**self._SEARCH, **(search_space or {})}
+        self.device       = resolve_device(self.search.get("device", "auto"))
 
         self.study        = None
         self._best_model  = None
@@ -724,6 +723,7 @@ class LocomotionMMGCNNTuner:
         hyperparams["batch_size"] = batch_size
         hyperparams["epochs"]     = self.search["epochs"]
         hyperparams["class_weights"] = self.search.get("class_weights")
+        hyperparams["device"] = str(self.device)
 
         # Rebuild DataLoaders with trial batch size
         train_ds = self.train_loader.dataset
@@ -732,9 +732,12 @@ class LocomotionMMGCNNTuner:
             int(self.search.get("seed", 42)) + trial.number
         )
         t_loader = DataLoader(
-            train_ds, batch_size=batch_size, shuffle=True, generator=generator
+            train_ds, batch_size=batch_size, shuffle=True, generator=generator,
+            pin_memory=self.device.type == "cuda",
         )
-        v_loader = DataLoader(val_ds,   batch_size=batch_size)
+        v_loader = DataLoader(
+            val_ds, batch_size=batch_size, pin_memory=self.device.type == "cuda"
+        )
 
         # ── 5. Build model + trainer ─────────────────────────────────────────
         model = LocomotionMMGCNN(
@@ -816,7 +819,7 @@ class LocomotionMMGCNNTuner:
         print(
             f"\n[LocomotionMMGCNNTuner] Starting Optuna search"
             f"  |  n_trials={n_trials}  timeout={timeout}s"
-            f"  |  device={'cuda' if torch.cuda.is_available() else 'cpu'}\n"
+            f"  |  device={self.device}\n"
         )
 
         self.study.optimize(

@@ -284,3 +284,59 @@ the authoritative model recorded in the manifest.
 ```bash
 git clone https://github.com/<your-username>/HAR-MultiModal-DL.git
 cd HAR-MultiModal-DL
+```
+
+**2. Create and activate a virtual environment**
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+**3. Install PyTorch and project dependencies**
+
+For CPU-only use, install the project requirements normally:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+For NVIDIA GPU use, first choose the CUDA-enabled command for your operating
+system and driver from the [official PyTorch installer](https://pytorch.org/get-started/locally/),
+run that command, and then install the remaining requirements. Do not assume
+that installing a local CUDA Toolkit makes a `+cpu` PyTorch wheel GPU-capable;
+PyTorch itself must have been installed with CUDA support.
+
+Verify the active environment before starting a long experiment:
+
+```powershell
+python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA build:', torch.version.cuda); print('CUDA available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')"
+```
+
+If the PyTorch version ends in `+cpu` or `torch.version.cuda` is `None`, that
+environment cannot use an NVIDIA GPU.
+
+### Compute-device selection
+
+Every public function in `train/` accepts a `device` keyword:
+
+| Value | Behavior |
+|-------|----------|
+| `"auto"` | Default. Use CUDA when available; otherwise use CPU. |
+| `"cuda"` | Require the current CUDA device; fail clearly if unavailable. |
+| `"cuda:0"` | Require a particular zero-based NVIDIA GPU index. |
+| `"cpu"` | Force CPU execution even when CUDA is available. |
+
+Example:
+
+```python
+result = train_and_evaluate_imu_cnn(
+	prepared,
+	device="cuda",
+)
+```
+
+The selected device is used consistently for Optuna trials, final refitting,
+class weights, input batches, and fusion checkpoint loading. Each run records
+the requested and resolved device, GPU name, CUDA version, and cuDNN version in
+its `manifest.json`. An explicit CUDA request never silently falls back to CPU.
