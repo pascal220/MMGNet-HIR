@@ -3,7 +3,7 @@
 This module owns the file-scanning, volunteer split, memory planning, tensor
 loading, and optional model-input preparation steps. ``main.py`` calls into this
 module, and the returned tensors can also be passed directly to the test helper
-functions in ``tests/``.
+functions in ``train/``.
 """
 
 from __future__ import annotations

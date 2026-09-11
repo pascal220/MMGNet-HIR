@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
 from data_loader import PreparedData, prepare_experiment_data, prepare_training_data
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "tests"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "train"))
 
 from fusion_train import train_and_evaluate_fusion
 from fusion_windows_train import train_and_evaluate_fusion_windows
