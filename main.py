@@ -46,17 +46,7 @@ def _log_prepared_summary(prepared: PreparedData) -> None:
     logger.info("Train metadata rows : %d", len(prepared.train_metadata))
     logger.info("Test metadata rows  : %d", len(prepared.test_metadata))
 
-    logger.info("Pass the PreparedData object directly to the selected test entry point.")
-
-
-def _log_training_dispatch_hint(prepared: PreparedData) -> None:
-    """Log which training entry point(s) match the prepared data."""
-    entry_points = _select_train_and_evaluate(prepared)
-    if isinstance(entry_points, tuple):
-        names = ", ".join(f"{fn.__name__}(prepared)" for fn in entry_points)
-    else:
-        names = f"{entry_points.__name__}(prepared)"
-    logger.info("Matching entry point(s): %s.", names)
+    logger.info("PreparedData is ready for the requested operation.")
 
 
 def _select_train_and_evaluate(prepared: PreparedData):
@@ -64,27 +54,27 @@ def _select_train_and_evaluate(prepared: PreparedData):
     if prepared.input_mode == "windowed":
         if prepared.model_target == "fusion":
             return train_and_evaluate_fusion_windows
-        return train_and_evaluate_imu_cnn_windows, train_and_evaluate_mmg_cnn_windows
+        return train_and_evaluate_mmg_cnn_windows, train_and_evaluate_imu_cnn_windows
 
     if prepared.model_target == "fusion":
         return train_and_evaluate_fusion
-    return train_and_evaluate_imu_cnn, train_and_evaluate_mmg_cnn
+    return train_and_evaluate_mmg_cnn, train_and_evaluate_imu_cnn
 
 
 def _run_selected_training(prepared: PreparedData) -> None:
-    """Reserve training dispatch; expensive optimization remains disabled here."""
+    """Run the selected training entry point(s) in their required order."""
     entry_points = _select_train_and_evaluate(prepared)
-    if isinstance(entry_points, tuple):
-        for train_and_evaluate in entry_points:
-            logger.info("%s route selected (training disabled).", train_and_evaluate.__name__)
-            # train_and_evaluate(prepared)
-    else:
-        logger.info("%s route selected (training disabled).", entry_points.__name__)
-        # entry_points(prepared)
+    if not isinstance(entry_points, tuple):
+        entry_points = (entry_points,)
+
+    for train_and_evaluate in entry_points:
+        logger.info("Starting training with %s.", train_and_evaluate.__name__)
+        train_and_evaluate(prepared)
+        logger.info("Completed training with %s.", train_and_evaluate.__name__)
 
 
 def main() -> int:
-    """Prepare train/test tensors for later model test-script execution."""
+    """Prepare data and run the operation selected by the command-line flags."""
     parser = argparse.ArgumentParser(
         description="Prepare volunteer-based train/test tensors."
     )
@@ -120,7 +110,20 @@ def main() -> int:
         default="standalone",
         help="Prepare tensors for standalone IMU/MMG models or paired fusion models.",
     )
+    parser.add_argument(
+        "--train",
+        action="store_true",
+        help="Run the selected training entry point(s).",
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Request testing; testing is not implemented yet.",
+    )
     args = parser.parse_args()
+
+    if not args.train and not args.test:
+        parser.error("at least one of --train or --test is required")
 
     experiment = prepare_experiment_data(
         setup=args.setup,
@@ -141,8 +144,16 @@ def main() -> int:
     )
 
     _log_prepared_summary(prepared)
-    _log_training_dispatch_hint(prepared)
-    # _run_selected_training(prepared)
+
+    if args.train:
+        try:
+            _run_selected_training(prepared)
+        except Exception:
+            logger.exception("Training failed; stopping execution.")
+            return 1
+
+    if args.test:
+        logger.warning("Testing was requested, but testing is not implemented yet.")
 
     return 0
 
