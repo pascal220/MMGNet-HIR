@@ -50,7 +50,7 @@ class TrainingRunConfig:
     """Settings shared by every model-specific training entry point."""
 
     n_trials: int = 50
-    timeout: int | None = 3600
+    timeout: int | None = None
     artifact_root: str = "results/training"
     run_label: str | None = None
     resume_run_id: str | None = None
@@ -85,6 +85,7 @@ class RunArtifacts:
 
 TunerFactory = Callable[[DataLoader, DataLoader, dict[str, Any]], Any]
 TrainerFactory = Callable[..., Any]
+
 
 
 

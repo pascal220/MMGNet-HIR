@@ -499,7 +499,7 @@ class FusionCNNTuner:
     Usage:
         tuner      = FusionCNNTuner(train_loader, val_loader,
                                     intent_cnn_path, gesture_cnn_path)
-        best_model = tuner.run(n_trials=50, timeout=3600)
+        best_model = tuner.run(n_trials=50)
         tuner.plot_results(save_dir='optuna_plots_fusion_cnn')
     """
 
@@ -634,7 +634,7 @@ class FusionCNNTuner:
     def run(
         self,
         n_trials:      int  = 50,
-        timeout:       int | None = 3600,
+        timeout:       int | None = None,
         show_progress: bool = True,
         storage: str | None = None,
         study_name: str | None = None,
@@ -655,9 +655,10 @@ class FusionCNNTuner:
             load_if_exists=load_if_exists,
         )
 
+        timeout_desc = f"{timeout}s" if timeout is not None else "None"
         print(
             f"\n[FusionCNNTuner] Starting Optuna search"
-            f"  |  n_trials={n_trials}  timeout={timeout}s"
+            f"  |  n_trials={n_trials}  timeout={timeout_desc}"
             f"  |  device={self.device}\n"
         )
 

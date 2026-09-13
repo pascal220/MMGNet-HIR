@@ -573,7 +573,7 @@ class IntentCNNWindowTuner:
 
     Usage:
         tuner      = IntentCNNWindowTuner(train_loader, val_loader)
-        best_model = tuner.run(n_trials=50, timeout=3600)
+        best_model = tuner.run(n_trials=50)
         tuner.plot_results(save_dir="optuna_plots")
     """
 
@@ -780,7 +780,7 @@ class IntentCNNWindowTuner:
     def run(
         self,
         n_trials:    int  = 50,
-        timeout:     int | None = 3600,   # seconds (1 hour)
+        timeout:     int | None = None,
         show_progress: bool = True,
         storage: str | None = None,
         study_name: str | None = None,
@@ -791,7 +791,7 @@ class IntentCNNWindowTuner:
 
         Args:
             n_trials     : maximum number of trials
-            timeout      : hard stop in seconds (default 3600 = 1 hour)
+            timeout      : optional hard stop in seconds (default None)
             show_progress: display Optuna progress bar
 
         Returns:
@@ -813,9 +813,10 @@ class IntentCNNWindowTuner:
             load_if_exists=load_if_exists,
         )
 
+        timeout_desc = f"{timeout}s" if timeout is not None else "None"
         print(
             f"\n[IntentCNNWindowTuner] Starting Optuna search"
-            f"  |  n_trials={n_trials}  timeout={timeout}s"
+            f"  |  n_trials={n_trials}  timeout={timeout_desc}"
             f"  |  device={self.device}\n"
         )
 

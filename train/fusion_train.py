@@ -26,7 +26,7 @@ def train_and_evaluate_fusion(
     fusion_gru_checkpoint_path: str | None = FUSION_GRU_PATH,
     *,
     n_trials: int = 50,
-    timeout: int | None = 3600,
+    timeout: int | None = None,
     artifact_root: str = "results/training",
     run_label: str | None = None,
     cnn_resume_run_id: str | None = None,

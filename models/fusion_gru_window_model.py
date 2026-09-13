@@ -673,7 +673,7 @@ class FusionGRUWindowTuner:
             imu_checkpoint="imu_best.pth",
             mmg_checkpoint="mmg_best.pth"
         )
-        best_model = tuner.run(n_trials=50, timeout=3600)
+        best_model = tuner.run(n_trials=50)
         tuner.plot_results(save_dir="optuna_plots")
     """
 
@@ -898,7 +898,7 @@ class FusionGRUWindowTuner:
     def run(
         self,
         n_trials:      int  = 50,
-        timeout:       int | None = 3600,
+        timeout:       int | None = None,
         show_progress: bool = True,
         storage: str | None = None,
         study_name: str | None = None,
@@ -909,7 +909,7 @@ class FusionGRUWindowTuner:
 
         Args:
             n_trials     : maximum number of trials
-            timeout      : hard stop in seconds (default 3600 = 1 hour)
+            timeout      : optional hard stop in seconds (default None)
             show_progress: display Optuna progress bar
 
         Returns:
@@ -930,9 +930,10 @@ class FusionGRUWindowTuner:
             load_if_exists=load_if_exists,
         )
 
+        timeout_desc = f"{timeout}s" if timeout is not None else "None"
         print(
             f"\n[FusionGRUWindowTuner] Starting Optuna search"
-            f"  |  n_trials={n_trials}  timeout={timeout}s"
+            f"  |  n_trials={n_trials}  timeout={timeout_desc}"
             f"  |  device={self.device}\n"
         )
 

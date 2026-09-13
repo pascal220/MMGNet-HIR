@@ -229,6 +229,15 @@ class TrainingExperimentTests(unittest.TestCase):
         self.assertTrue(torch.equal(actual_second, second[1]))
         self.assertEqual(actual_label.item(), 1)
 
+    def test_training_run_config_defaults_timeout_to_none(self) -> None:
+        config = TrainingRunConfig()
+        self.assertIsNone(config.timeout)
+        config.validate()
+
+        invalid_config = TrainingRunConfig(timeout=0)
+        with self.assertRaisesRegex(ValueError, "timeout must be positive or None."):
+            invalid_config.validate()
+
     def test_export_study_writes_csv_and_each_html_plot(self) -> None:
         study = optuna.create_study(direction="maximize")
 

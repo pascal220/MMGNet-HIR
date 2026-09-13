@@ -19,7 +19,7 @@ def train_and_evaluate_mmg_cnn_windows(
     checkpoint_path: str | None = "checkpoints/best_window_mmg_cnn.pt",
     *,
     n_trials: int = 50,
-    timeout: int | None = 3600,
+    timeout: int | None = None,
     artifact_root: str = "results/training",
     run_label: str | None = None,
     resume_run_id: str | None = None,
