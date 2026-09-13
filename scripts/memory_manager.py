@@ -240,7 +240,7 @@ def load_samples(samples: pd.DataFrame, modality: str) -> Tensor:
     samples = samples.reset_index(drop=True)
     total = len(samples)
 
-    probe = np.load(samples.at[0, path_column], mmap_mode="r", allow_pickle=False)
+    probe = np.load(str(samples.at[0, path_column]), mmap_mode="r", allow_pickle=False)
     item_shape = tuple(int(dim) for dim in probe.shape[1:])
     destination = torch.empty((total, *item_shape), dtype=torch.float32)
     expected = destination.nelement() * destination.element_size()
@@ -251,7 +251,7 @@ def load_samples(samples: pd.DataFrame, modality: str) -> Tensor:
 
     groups = list(samples.groupby(path_column, sort=True))
     for number, (path, group) in enumerate(groups, start=1):
-        array = np.load(path, mmap_mode="r", allow_pickle=False)
+        array = np.load(str(path), mmap_mode="r", allow_pickle=False)
         if tuple(int(dim) for dim in array.shape[1:]) != item_shape:
             raise ValueError(
                 f"'{path}' has item shape {array.shape[1:]}, expected {item_shape}."

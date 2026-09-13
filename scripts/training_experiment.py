@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence, runtime_checkable
 
 import numpy as np
 import optuna
@@ -84,7 +84,28 @@ class RunArtifacts:
 
 
 TunerFactory = Callable[[DataLoader, DataLoader, dict[str, Any]], Any]
-TrainerFactory = Callable[[torch.nn.Module, dict[str, Any]], Any]
+TrainerFactory = Callable[..., Any]
+
+
+
+@runtime_checkable
+class PreparedDataLike(Protocol):
+    """Structural shape ``run_training_experiment`` relies on from ``PreparedData``."""
+
+    @property
+    def experiment(self) -> Any: ...
+
+    @property
+    def input_mode(self) -> Any: ...
+
+    @property
+    def model_target(self) -> Any: ...
+
+    @property
+    def y_train(self) -> torch.Tensor: ...
+
+    @property
+    def train_metadata(self) -> pd.DataFrame: ...
 
 
 class _NestedPairDataset(Dataset):
@@ -112,7 +133,7 @@ def combined_metric(accuracy: float, macro_f1: float) -> float:
     return 0.5 * float(accuracy) + 0.5 * float(macro_f1)
 
 
-def best_epoch_metrics(history: dict[str, Sequence[float]]) -> dict[str, float | int]:
+def best_epoch_metrics(history: Mapping[str, Sequence[float]]) -> dict[str, float | int]:
     """Select accuracy and F1 from the same best validation epoch."""
     accuracies = list(history.get("val_acc", []))
     f1_scores = list(history.get("val_f1", []))
@@ -187,7 +208,7 @@ def _slug(value: str) -> str:
 
 def create_run_artifacts(
     model_key: str,
-    prepared: PreparedData,
+    prepared: PreparedDataLike,
     config: TrainingRunConfig,
 ) -> RunArtifacts:
     """Create or reopen the directory for one model run."""
@@ -382,7 +403,7 @@ def _make_dataset(
 
 def run_training_experiment(
     *,
-    prepared: PreparedData,
+    prepared: PreparedDataLike,
     model_key: str,
     input_tensors: Sequence[torch.Tensor],
     tuner_factory: TunerFactory,
@@ -474,6 +495,8 @@ def run_training_experiment(
 
     plots = export_study(study, artifacts)
     best_trial = study.best_trial
+    if best_trial.value is None:
+        raise RuntimeError("Best trial is missing its single-objective value.")
     selection = {
         "best_trial_number": int(best_trial.number),
         "best_epoch": int(best_trial.user_attrs["best_epoch"]),
