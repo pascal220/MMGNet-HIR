@@ -13,6 +13,8 @@
 
 import ast
 import os
+from typing import Any
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -671,6 +673,7 @@ class IntentCNNWindowTuner:
         # ── 3. Sample optimiser + hyperparameters ───────────────────────────
         opt_name = trial.suggest_categorical("optimizer", ["SGD", "Adam"])
 
+        hyperparams: dict[str, Any]
         if opt_name == "SGD":
             hyperparams = dict(
                 optimizer    = "SGD",
