@@ -175,11 +175,14 @@ class IntentCNNWindow(nn.Module):
         )
 
         # ── New first layer: Conv2D on (125, 4) spatial dimensions ──────────
+        # Explicit padding (not 'same') avoids the even-kernel zero-padded-copy
+        # warning: the window axis kernel (4) spans the whole dimension so it
+        # needs no padding, while the width kernel is odd so kernel//2 is exact.
         self.first_conv = nn.Conv2d(
             in_channels=in_channels,
             out_channels=first_conv_filters,
             kernel_size=(first_conv_kernel_width, 4),  # (width, depth=4)
-            padding='same',
+            padding=(first_conv_kernel_width // 2, 0),
             bias=False,
         )
         self.bn_first = nn.BatchNorm2d(first_conv_filters)

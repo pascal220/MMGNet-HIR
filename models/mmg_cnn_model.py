@@ -273,7 +273,7 @@ class LocomotionMMGCNNTrainer:
 
     _ADAM_DEFAULTS = dict(
         optimizer    = "Adam",
-        lr           = 0.005,       # paper default
+        lr           = 0.005,       
         weight_decay = 1e-4,
         beta1        = 0.9,
         beta2        = 0.999,

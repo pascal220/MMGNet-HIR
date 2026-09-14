@@ -90,10 +90,10 @@ def main() -> int:
     )
     parser.add_argument("--train-volunteer-count", type=int, default=8)
     parser.add_argument("--test-volunteer-count", type=int, default=2)
-    parser.add_argument("--total-budget-gb", type=float, default=24.0)
+    parser.add_argument("--total-budget-gb", type=float, default=10.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test-fraction", type=float, default=0.10)
-    parser.add_argument("--just-states-ratio", type=float, default=1.10)
+    parser.add_argument("--just-states-ratio", type=float, default=1.05)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
         "--input-mode",

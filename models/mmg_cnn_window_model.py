@@ -151,11 +151,14 @@ class LocomotionMMGCNNWindow(nn.Module):
         assert len(dropout_rates) == n, "dropout_rates must match block_filters length"
 
         # ── New first layer: Conv3D on (40, 125, 4) volume ──────────────────
+        # Explicit padding (not 'same') avoids the even-kernel zero-padded-copy
+        # warning: the window axis kernel (4) spans the whole dimension so it
+        # needs no padding, while freq/time kernels are odd so kernel//2 is exact.
         self.first_conv = nn.Conv3d(
             in_channels=in_channels,
             out_channels=first_conv_filters,
             kernel_size=(first_conv_kernel_freq, first_conv_kernel_time, 4),
-            padding='same',
+            padding=(first_conv_kernel_freq // 2, first_conv_kernel_time // 2, 0),
             bias=False,
         )
         self.bn_first = nn.BatchNorm3d(first_conv_filters)
