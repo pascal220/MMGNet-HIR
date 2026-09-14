@@ -607,6 +607,22 @@ class IntentCNNWindowTuner:
         lr_decay      = (0.05, 0.50),
     )
 
+    # Fixed input sequence length feeding the Inception blocks (after window pool)
+    _INPUT_LENGTH = 125
+
+    @staticmethod
+    def _blocks_fit_input(kernel_pairs: list[tuple], length: int) -> bool:
+        """Check that the sampled Inception blocks never require a kernel
+        larger than the current (already downsampled) sequence length."""
+        l = length
+        for kernel_a, kernel_b in kernel_pairs:
+            if kernel_a > l:
+                return False
+            l = (l - kernel_a) // 2 + 1
+            if l < 1 or kernel_a > l or kernel_b > l:
+                return False
+        return True
+
     def __init__(
         self,
         train_loader:  DataLoader,
@@ -669,6 +685,13 @@ class IntentCNNWindowTuner:
             )
             block_filters.append(filters)
             kernel_pairs.append(ast.literal_eval(kpair))
+
+        # Reject architectures where a later block's kernel would be larger
+        # than the (already downsampled) sequence, which crashes Conv1d.
+        if not self._blocks_fit_input(kernel_pairs, self._INPUT_LENGTH):
+            raise optuna.exceptions.TrialPruned(
+                "Sampled architecture shrinks the sequence below the kernel size."
+            )
 
         # ── 3. Sample optimiser + hyperparameters ───────────────────────────
         opt_name = trial.suggest_categorical("optimizer", ["SGD", "Adam"])

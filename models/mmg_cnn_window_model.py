@@ -622,6 +622,27 @@ class LocomotionMMGCNNWindowTuner:
         lr_min        = 1e-7,
     )
 
+    # Fixed input spatial dims after the first Conv3D + window pool: (freq=40, time=125)
+    _INPUT_FREQ_DIM = 40
+    _INPUT_TIME_DIM = 125
+
+    @staticmethod
+    def _blocks_fit_input(
+        kernel_sizes: list[int], strides: list[int], freq: int, time: int
+    ) -> bool:
+        """Check that the sampled Conv2D blocks never require a kernel larger
+        than the current feature map, and never shrink it below 1x1."""
+        h, w = freq, time
+        for kernel, stride in zip(kernel_sizes, strides):
+            if kernel > h or kernel > w:
+                return False
+            padding = kernel // 2 if stride == 1 else 0
+            h = (h + 2 * padding - kernel) // stride + 1
+            w = (w + 2 * padding - kernel) // stride + 1
+            if h < 1 or w < 1:
+                return False
+        return True
+
     def __init__(
         self,
         train_loader:  DataLoader,
@@ -699,6 +720,15 @@ class LocomotionMMGCNNWindowTuner:
             kernel_sizes.append(kernel)
             strides.append(stride)
             dropout_rates.append(dropout)
+
+        # Reject architectures where a later block's kernel would be larger
+        # than the (already downsampled) feature map, which crashes Conv2d.
+        if not self._blocks_fit_input(
+            kernel_sizes, strides, self._INPUT_FREQ_DIM, self._INPUT_TIME_DIM
+        ):
+            raise optuna.exceptions.TrialPruned(
+                "Sampled architecture shrinks the feature map below the kernel size."
+            )
 
         # ── 3. Sample classifier FC hidden layer ────────────────────────────
         fc_hidden_str = trial.suggest_categorical(
