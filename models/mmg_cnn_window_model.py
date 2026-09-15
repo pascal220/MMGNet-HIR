@@ -10,7 +10,7 @@
 #   - Window collapse: GlobalMaxPool3D after first conv
 #   - Conv Block 1 : Replaced by new Conv3D layer
 #   - Rest of architecture: Conv2D blocks 2, 3, 4 unchanged
-#   - Optuna HPO   : Added first_conv_filters, first_conv_kernel_freq, first_conv_kernel_time
+#   - Optuna HPO   : Added first_conv_filters and first_conv_kernel_size
 
 import os
 from typing import Any
@@ -577,8 +577,8 @@ class LocomotionMMGCNNWindowTuner:
     Wraps an Optuna study to find the best LocomotionMMGCNNWindow hyperparameters.
 
     Searches over:
-        First layer  : first_conv_filters, first_conv_kernel_freq, first_conv_kernel_time
-        Architecture : number of Conv2D blocks (1-3), filters per block,
+        First layer  : first_conv_filters, first_conv_kernel_size
+        Architecture : number of Conv2D blocks (1-4), filters per block,
                        kernel size, stride, dropout per block
         Optimiser    : SGD or Adam (with respective hyperparameters)
         Training     : batch size, lr schedule
@@ -597,18 +597,17 @@ class LocomotionMMGCNNWindowTuner:
     _SEARCH = dict(
         # NEW: First layer
         first_conv_filters      = [16, 32, 64, 128],
-        first_conv_kernel_freq  = [3, 5, 7],
-        first_conv_kernel_time  = [3, 5, 7],
+        first_conv_kernel_size  = [3, 5, 7],
         # Architecture (Conv2D blocks)
-        n_blocks      = (1, 3),
-        filters       = [16, 32, 64, 128],
-        kernel_sizes  = [3, 5, 7],
+        n_blocks      = (1, 4),
+        filters       = [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]],
+        kernel_sizes  = [[7, 5, 3], [5, 3], [3], [3]],
         strides       = [1, 2, 3],
         dropout_rates = (0.1, 0.5),
         # Classifier
         fc_hidden     = [64, 128, 256],
         # Training
-        batch_size    = [16, 32, 64],
+        batch_size    = [32, 64, 128, 256],
         epochs        = 50,                         # fixed per trial
         # SGD
         sgd_lr        = (1e-4, 1e-1),
@@ -684,11 +683,8 @@ class LocomotionMMGCNNWindowTuner:
         first_conv_filters = trial.suggest_categorical(
             "first_conv_filters", self.search["first_conv_filters"]
         )
-        first_conv_kernel_freq = trial.suggest_categorical(
-            "first_conv_kernel_freq", self.search["first_conv_kernel_freq"]
-        )
-        first_conv_kernel_time = trial.suggest_categorical(
-            "first_conv_kernel_time", self.search["first_conv_kernel_time"]
+        first_conv_kernel_size = trial.suggest_categorical(
+            "first_conv_kernel_size", self.search["first_conv_kernel_size"]
         )
 
         # ── 2. Sample architecture (Conv2D blocks) ──────────────────────────
@@ -705,10 +701,10 @@ class LocomotionMMGCNNWindowTuner:
 
         for i in range(n_blocks):
             filters = trial.suggest_categorical(
-                f"block_{i}_filters", self.search["filters"]
+                f"block_{i}_filters", self.search["filters"][i]
             )
             kernel = trial.suggest_categorical(
-                f"block_{i}_kernel", self.search["kernel_sizes"]
+                f"block_{i}_kernel", self.search["kernel_sizes"][i]
             )
             stride = trial.suggest_categorical(
                 f"block_{i}_stride", self.search["strides"]
@@ -810,8 +806,8 @@ class LocomotionMMGCNNWindowTuner:
             in_channels             = self.in_channels,
             num_classes             = self.num_classes,
             first_conv_filters      = first_conv_filters,
-            first_conv_kernel_freq  = first_conv_kernel_freq,
-            first_conv_kernel_time  = first_conv_kernel_time,
+            first_conv_kernel_freq  = first_conv_kernel_size,
+            first_conv_kernel_time  = first_conv_kernel_size,
             block_filters           = block_filters,
             kernel_sizes            = kernel_sizes,
             strides                 = strides,
@@ -927,8 +923,9 @@ class LocomotionMMGCNNWindowTuner:
         n_blocks  = p["n_blocks"]
 
         first_conv_filters      = p["first_conv_filters"]
-        first_conv_kernel_freq  = p["first_conv_kernel_freq"]
-        first_conv_kernel_time  = p["first_conv_kernel_time"]
+        first_conv_kernel_size = p.get("first_conv_kernel_size")
+        if first_conv_kernel_size is None:
+            first_conv_kernel_size = p["first_conv_kernel_freq"]
 
         block_filters = [p[f"block_{i}_filters"] for i in range(n_blocks)]
         kernel_sizes  = [p[f"block_{i}_kernel"]  for i in range(n_blocks)]
@@ -942,8 +939,8 @@ class LocomotionMMGCNNWindowTuner:
             in_channels             = self.in_channels,
             num_classes             = self.num_classes,
             first_conv_filters      = first_conv_filters,
-            first_conv_kernel_freq  = first_conv_kernel_freq,
-            first_conv_kernel_time  = first_conv_kernel_time,
+            first_conv_kernel_freq  = first_conv_kernel_size,
+            first_conv_kernel_time  = first_conv_kernel_size,
             block_filters           = block_filters,
             kernel_sizes            = kernel_sizes,
             strides                 = strides,

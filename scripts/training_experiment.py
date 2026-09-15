@@ -82,6 +82,7 @@ class RunArtifacts:
     checkpoint: Path
     study_database: Path
     trials_csv: Path
+    best_trial_json: Path
     history_json: Path
     manifest_json: Path
     plots_dir: Path
@@ -251,6 +252,7 @@ def create_run_artifacts(
         checkpoint=run_dir / f"{run_id}.pt",
         study_database=run_dir / "study.sqlite3",
         trials_csv=run_dir / "trials.csv",
+        best_trial_json=run_dir / "best_trial.json",
         history_json=run_dir / "training_history.json",
         manifest_json=run_dir / "manifest.json",
         plots_dir=plots_dir,
@@ -528,6 +530,19 @@ def run_training_experiment(
         "objective_value": float(best_trial.value),
     }
 
+    best_trial_summary = {
+        "model_key": model_key,
+        "study_name": study.study_name,
+        "best_trial_number": selection["best_trial_number"],
+        "objective": OBJECTIVE_NAME,
+        "objective_value": selection["objective_value"],
+        "best_epoch": selection["best_epoch"],
+        "validation_accuracy": selection["validation_accuracy"],
+        "validation_macro_f1": selection["validation_macro_f1"],
+        "best_params": dict(best_trial.params),
+    }
+    _write_json(artifacts.best_trial_json, best_trial_summary)
+
     final_weights = balanced_class_weights(prepared.y_train, num_classes)
     training_params = normalize_training_params(
         best_trial.params,
@@ -645,6 +660,7 @@ def run_training_experiment(
             "checkpoint_alias_saved_at_utc": saved_at.isoformat(),
             "study_database": artifacts.study_database.name,
             "trials_csv": artifacts.trials_csv.name,
+            "best_trial_json": artifacts.best_trial_json.name,
             "plots": plots,
         },
         "environment": {
@@ -672,6 +688,7 @@ def run_training_experiment(
         "artifact_dir": str(artifacts.run_dir),
         "checkpoint_path": str(artifacts.checkpoint),
         "manifest_path": str(artifacts.manifest_json),
+        "best_trial_json_path": str(artifacts.best_trial_json),
         "study_path": str(artifacts.study_database),
         "trials_csv_path": str(artifacts.trials_csv),
         "history": history,

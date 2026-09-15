@@ -173,6 +173,40 @@ class TrainingExperimentTests(unittest.TestCase):
             with self.subTest(tuner=tuner_class.__name__):
                 self.assertTrue(callable(getattr(tuner_class, "_build_best_model", None)))
 
+    def test_mmg_tuners_use_block_specific_search_spaces(self) -> None:
+        expected_filters = [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]]
+        expected_kernels = [[7, 5, 3], [5, 3], [3], [3]]
+        for tuner_class in (LocomotionMMGCNNTuner, LocomotionMMGCNNWindowTuner):
+            with self.subTest(tuner=tuner_class.__name__):
+                self.assertEqual(tuner_class._SEARCH["n_blocks"], (1, 4))
+                self.assertEqual(tuner_class._SEARCH["filters"], expected_filters)
+                self.assertEqual(tuner_class._SEARCH["kernel_sizes"], expected_kernels)
+                self.assertEqual(tuner_class._SEARCH["batch_size"], [32, 64, 128, 256])
+
+    def test_window_mmg_tuner_uses_one_first_conv_kernel_size(self) -> None:
+        self.assertEqual(LocomotionMMGCNNWindowTuner._SEARCH["first_conv_kernel_size"], [3, 5, 7])
+        self.assertNotIn("first_conv_kernel_freq", LocomotionMMGCNNWindowTuner._SEARCH)
+        self.assertNotIn("first_conv_kernel_time", LocomotionMMGCNNWindowTuner._SEARCH)
+
+        tuner = LocomotionMMGCNNWindowTuner.__new__(LocomotionMMGCNNWindowTuner)
+        tuner.in_channels = 5
+        tuner.num_classes = 7
+        tuner._best_params = {
+            "first_conv_filters": 16,
+            "first_conv_kernel_size": 5,
+            "n_blocks": 1,
+            "block_0_filters": 8,
+            "block_0_kernel": 7,
+            "block_0_stride": 1,
+            "block_0_dropout": 0.25,
+            "fc_hidden": "64",
+        }
+
+        model = tuner._build_best_model()
+
+        self.assertEqual(model.config["first_conv_kernel_freq"], 5)
+        self.assertEqual(model.config["first_conv_kernel_time"], 5)
+
     def test_best_epoch_uses_accuracy_and_f1_from_same_epoch(self) -> None:
         history = {
             "val_acc": [0.95, 0.70],
@@ -276,6 +310,7 @@ class TrainingExperimentTests(unittest.TestCase):
                 checkpoint=run_dir / "model.pt",
                 study_database=run_dir / "study.sqlite3",
                 trials_csv=run_dir / "trials.csv",
+                best_trial_json=run_dir / "best_trial.json",
                 history_json=run_dir / "training_history.json",
                 manifest_json=run_dir / "manifest.json",
                 plots_dir=plots_dir,
@@ -333,6 +368,14 @@ class TrainingExperimentTests(unittest.TestCase):
             self.assertTrue(Path(result["checkpoint_path"]).is_file())
             self.assertTrue(Path(result["study_path"]).is_file())
             self.assertTrue(Path(result["trials_csv_path"]).is_file())
+            self.assertTrue(Path(result["best_trial_json_path"]).is_file())
+            best_trial = __import__("json").loads(
+                Path(result["best_trial_json_path"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(best_trial["model_key"], "tiny_model")
+            self.assertEqual(best_trial["best_trial_number"], 0)
+            self.assertEqual(best_trial["objective_value"], 0.75)
+            self.assertEqual(best_trial["best_params"]["batch_size"], 8)
             manifest = __import__("json").loads(
                 Path(result["manifest_path"]).read_text(encoding="utf-8")
             )
@@ -344,6 +387,7 @@ class TrainingExperimentTests(unittest.TestCase):
             self.assertEqual(manifest["final_refit"]["training_params"]["device"], "cpu")
             self.assertEqual(manifest["environment"]["compute_device"]["requested"], "cpu")
             self.assertEqual(manifest["environment"]["compute_device"]["resolved"], "cpu")
+            self.assertEqual(manifest["artifacts"]["best_trial_json"], "best_trial.json")
             self.assertEqual(observed_loaders, [(False, False)])
             self.assertEqual(len(list((run_dir / "plots").glob("*.html"))), 4)
             aliases = [Path(path) for path in manifest["artifacts"]["checkpoint_aliases"]]

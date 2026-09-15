@@ -88,8 +88,8 @@ def main() -> int:
         default=None,
         help="Volunteer ID for same_volunteer mode (e.g. 4 or N004).",
     )
-    parser.add_argument("--train-volunteer-count", type=int, default=2)
-    parser.add_argument("--test-volunteer-count", type=int, default=8)
+    parser.add_argument("--train-volunteer-count", type=int, default=5)
+    parser.add_argument("--test-volunteer-count", type=int, default=5)
     parser.add_argument("--total-budget-gb", type=float, default=10.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test-fraction", type=float, default=0.10)

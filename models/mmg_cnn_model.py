@@ -559,7 +559,7 @@ class LocomotionMMGCNNTuner:
     Wraps an Optuna study to find the best LocomotionMMGCNN hyperparameters.
 
     Searches over:
-        Architecture : number of blocks (1-3), filters per block,
+        Architecture : number of blocks (1-4), filters per block,
                        kernel size per block, stride per block,
                        dropout rate per block, optional FC hidden units
         Optimiser    : SGD or Adam (with respective hyperparameters)
@@ -577,14 +577,14 @@ class LocomotionMMGCNNTuner:
     # Search space bounds
     _SEARCH = dict(
         # Architecture
-        n_blocks      = (1, 3),
-        filters       = [16, 32, 64, 128],
-        kernel_sizes  = [3, 5, 7],
+        n_blocks      = (1, 4),
+        filters       = [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]],
+        kernel_sizes  = [[7, 5, 3], [5, 3], [3], [3]],
         strides       = [1, 2, 3],
         dropout_rates = (0.1, 0.5),
         fc_hidden     = [64, 128, 256],
         # Training
-        batch_size    = [16, 32, 64, 128],
+        batch_size    = [32, 64, 128, 256],
         epochs        = 50,                      # fixed per Optuna trial
         # SGD
         sgd_lr        = (1e-4, 1e-1),
@@ -670,12 +670,12 @@ class LocomotionMMGCNNTuner:
         for i in range(n_blocks):
             block_filters.append(
                 trial.suggest_categorical(
-                    f"block_{i}_filters", self.search["filters"]
+                    f"block_{i}_filters", self.search["filters"][i]
                 )
             )
             kernel_sizes.append(
                 trial.suggest_categorical(
-                    f"block_{i}_kernel", self.search["kernel_sizes"]
+                    f"block_{i}_kernel", self.search["kernel_sizes"][i]
                 )
             )
             strides.append(
