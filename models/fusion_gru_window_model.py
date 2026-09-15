@@ -187,7 +187,7 @@ class FusionGRUWindow(nn.Module):
         Frozen MMG backbone → features
         Concatenate
         Reshape to sequence: (batch, seq_len, feature_dim)
-        Bidirectional GRU
+        Unidirectional GRU
         Trainable FC head → classifier
 
     The GRU processes the concatenated features as a temporal sequence,
@@ -229,18 +229,17 @@ class FusionGRUWindow(nn.Module):
 
         self.seq_len = seq_len
 
-        # ── Bidirectional GRU ───────────────────────────────────────────────
+        # ── Unidirectional GRU ──────────────────────────────────────────────
         self.gru = nn.GRU(
             input_size    = self.backbones.feature_dim,
             hidden_size   = gru_hidden_dim,
             num_layers    = gru_num_layers,
             batch_first   = True,
-            bidirectional = True,
             dropout       = gru_dropout if gru_num_layers > 1 else 0.0,
         )
 
-        # GRU output dimension (bidirectional doubles the hidden size)
-        gru_output_dim = gru_hidden_dim * 2
+        # A unidirectional GRU returns one hidden representation per timestep.
+        gru_output_dim = gru_hidden_dim
 
         # ── Trainable FC head ───────────────────────────────────────────────
         fc_hidden_dims = fc_hidden_dims or []
@@ -310,10 +309,10 @@ class FusionGRUWindow(nn.Module):
         fused_seq  = fused.unsqueeze(1).expand(-1, self.seq_len, -1)
 
         # GRU forward
-        gru_out, _ = self.gru(fused_seq)  # (batch, seq_len, gru_hidden_dim*2)
+        gru_out, _ = self.gru(fused_seq)  # (batch, seq_len, gru_hidden_dim)
 
         # Take last timestep output
-        gru_last = gru_out[:, -1, :]      # (batch, gru_hidden_dim*2)
+        gru_last = gru_out[:, -1, :]      # (batch, gru_hidden_dim)
 
         # FC head
         logits = self.fc_head(gru_last)   # (batch, num_classes)
