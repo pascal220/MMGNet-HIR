@@ -53,8 +53,8 @@ coverage.xml
 cover/
 
 # Generated model-training artifacts
-/checkpoints/
-/results/training/
+#/checkpoints/
+#/results/training/
 
 # Translations
 *.mo

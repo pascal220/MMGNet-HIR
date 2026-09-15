@@ -34,6 +34,8 @@ def train_and_evaluate_mmg_cnn(
         seed=prepared.experiment.config.seed,
         show_progress=show_progress,
         device=device,
+        final_refit_epochs=100,
+        descriptive_checkpoint_alias=True,
     )
     return run_training_experiment(
         prepared=prepared,

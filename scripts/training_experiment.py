@@ -58,6 +58,8 @@ class TrainingRunConfig:
     seed: int = 42
     show_progress: bool = True
     device: str = "auto"
+    final_refit_epochs: int | None = None
+    descriptive_checkpoint_alias: bool = False
 
     def validate(self) -> None:
         if self.n_trials < 1:
@@ -66,6 +68,8 @@ class TrainingRunConfig:
             raise ValueError("timeout must be positive or None.")
         if not 0 < self.val_fraction < 1:
             raise ValueError("val_fraction must be between 0 and 1.")
+        if self.final_refit_epochs is not None and self.final_refit_epochs < 1:
+            raise ValueError("final_refit_epochs must be at least 1 or None.")
         normalize_device_request(self.device)
 
 
@@ -390,6 +394,24 @@ def _volunteers(metadata: pd.DataFrame) -> list[str]:
     return sorted(metadata[columns[0]].dropna().astype(str).unique().tolist())
 
 
+def _descriptive_checkpoint_alias(
+    path: Path,
+    experiment: Any,
+    saved_at: datetime,
+    final_accuracy: float,
+) -> Path:
+    """Append date, training-volunteer tag, and final accuracy to an alias."""
+    if experiment.setup == "same_volunteer":
+        volunteer_tag = f"V{experiment.same_volunteer_id}"
+    else:
+        volunteer_tag = f"V{experiment.train_volunteer_count}"
+    accuracy_tag = f"A{final_accuracy * 100:.2f}"
+    return path.with_name(
+        f"{path.stem}_{saved_at.strftime('%Y-%m-%d')}_{volunteer_tag}_{accuracy_tag}"
+        f"{path.suffix}"
+    )
+
+
 def _make_dataset(
     input_tensors: Sequence[torch.Tensor],
     labels: torch.Tensor,
@@ -509,7 +531,7 @@ def run_training_experiment(
     final_weights = balanced_class_weights(prepared.y_train, num_classes)
     training_params = normalize_training_params(
         best_trial.params,
-        best_epoch=int(selection["best_epoch"]),
+        best_epoch=run_config.final_refit_epochs or int(selection["best_epoch"]),
         class_weights=final_weights,
         fixed_params=tuner.search,
     )
@@ -529,15 +551,24 @@ def run_training_experiment(
     history = trainer.fit(
         final_loader,
         val_loader=None,
-        epochs=int(selection["best_epoch"]),
+        epochs=int(training_params["epochs"]),
         verbose=True,
     )
     trainer.save(str(artifacts.checkpoint))
     _write_json(artifacts.history_json, history)
 
     aliases: list[str] = []
+    saved_at = datetime.now(timezone.utc)
+    final_training_accuracy = float(history["train_acc"][-1])
     if legacy_checkpoint_path:
         alias = Path(legacy_checkpoint_path)
+        if run_config.descriptive_checkpoint_alias:
+            alias = _descriptive_checkpoint_alias(
+                alias,
+                prepared.experiment.config,
+                saved_at,
+                final_training_accuracy,
+            )
         if alias.resolve() != artifacts.checkpoint.resolve():
             alias.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(artifacts.checkpoint, alias)
@@ -600,7 +631,9 @@ def run_training_experiment(
             "search_class_weights": search_weights,
         },
         "final_refit": {
-            "policy": "all non-test development data for selected best epoch count",
+            "policy": "all non-test development data for configured final epoch count",
+            "epochs": int(training_params["epochs"]),
+            "final_training_accuracy": final_training_accuracy,
             "training_params": training_params,
             "class_weights": final_weights,
             "history_path": artifacts.history_json.name,
@@ -609,6 +642,7 @@ def run_training_experiment(
             "checkpoint": artifacts.checkpoint.name,
             "checkpoint_sha256": _sha256(artifacts.checkpoint),
             "checkpoint_aliases": aliases,
+            "checkpoint_alias_saved_at_utc": saved_at.isoformat(),
             "study_database": artifacts.study_database.name,
             "trials_csv": artifacts.trials_csv.name,
             "plots": plots,

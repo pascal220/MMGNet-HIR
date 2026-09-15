@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -18,6 +19,7 @@ sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "models")]
 from training_experiment import (
     RunArtifacts,
     TrainingRunConfig,
+    _descriptive_checkpoint_alias,
     _make_dataset,
     balanced_class_weights,
     best_epoch_metrics,
@@ -238,6 +240,23 @@ class TrainingExperimentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "timeout must be positive or None."):
             invalid_config.validate()
 
+        invalid_refit_config = TrainingRunConfig(final_refit_epochs=0)
+        with self.assertRaisesRegex(ValueError, "final_refit_epochs must be at least 1 or None."):
+            invalid_refit_config.validate()
+
+    def test_descriptive_checkpoint_alias_uses_single_volunteer_and_accuracy(self) -> None:
+        alias = _descriptive_checkpoint_alias(
+            Path("checkpoints/best_mmg_cnn.pt"),
+            _TinyExperimentConfig(setup="same_volunteer", same_volunteer_id="N004"),
+            datetime(2026, 9, 15, tzinfo=timezone.utc),
+            0.9876,
+        )
+
+        self.assertEqual(
+            alias,
+            Path("checkpoints/best_mmg_cnn_2026-09-15_VN004_A98.76.pt"),
+        )
+
     def test_export_study_writes_csv_and_each_html_plot(self) -> None:
         study = optuna.create_study(direction="maximize")
 
@@ -304,7 +323,10 @@ class TrainingExperimentTests(unittest.TestCase):
                         artifact_root=directory,
                         show_progress=False,
                         device="cpu",
+                        final_refit_epochs=3,
+                        descriptive_checkpoint_alias=True,
                     ),
+                    legacy_checkpoint_path=str(Path(directory) / "best_tiny_model.pt"),
                 )
 
             run_dir = Path(result["artifact_dir"])
@@ -317,11 +339,18 @@ class TrainingExperimentTests(unittest.TestCase):
             self.assertFalse(manifest["data"]["test_set_accessed"])
             self.assertEqual(manifest["optimization"]["selection"]["best_epoch"], 2)
             self.assertEqual(manifest["final_refit"]["training_params"]["batch_size"], 8)
+            self.assertEqual(manifest["final_refit"]["epochs"], 3)
+            self.assertEqual(manifest["final_refit"]["final_training_accuracy"], 0.5)
             self.assertEqual(manifest["final_refit"]["training_params"]["device"], "cpu")
             self.assertEqual(manifest["environment"]["compute_device"]["requested"], "cpu")
             self.assertEqual(manifest["environment"]["compute_device"]["resolved"], "cpu")
             self.assertEqual(observed_loaders, [(False, False)])
             self.assertEqual(len(list((run_dir / "plots").glob("*.html"))), 4)
+            aliases = [Path(path) for path in manifest["artifacts"]["checkpoint_aliases"]]
+            self.assertEqual(len(aliases), 1)
+            self.assertTrue(aliases[0].is_file())
+            self.assertTrue(aliases[0].name.startswith("best_tiny_model_"))
+            self.assertTrue(aliases[0].name.endswith("_V8_A50.00.pt"))
 
             with (
                 patch("training_experiment.plot_optimization_history", return_value=_FakeFigure()),
