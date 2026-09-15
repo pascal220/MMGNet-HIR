@@ -184,7 +184,7 @@ class TrainingExperimentTests(unittest.TestCase):
                 self.assertEqual(tuner_class._SEARCH["batch_size"], [32, 64, 128, 256])
 
     def test_window_mmg_tuner_uses_one_first_conv_kernel_size(self) -> None:
-        self.assertEqual(LocomotionMMGCNNWindowTuner._SEARCH["first_conv_kernel_size"], [3, 5, 7])
+        self.assertEqual(LocomotionMMGCNNWindowTuner._SEARCH["first_conv_kernel_size"], [7, 5, 3],)
         self.assertNotIn("first_conv_kernel_freq", LocomotionMMGCNNWindowTuner._SEARCH)
         self.assertNotIn("first_conv_kernel_time", LocomotionMMGCNNWindowTuner._SEARCH)
 

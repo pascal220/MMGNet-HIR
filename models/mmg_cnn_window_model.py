@@ -597,7 +597,7 @@ class LocomotionMMGCNNWindowTuner:
     _SEARCH = dict(
         # NEW: First layer
         first_conv_filters      = [16, 32, 64, 128],
-        first_conv_kernel_size  = [3, 5, 7],
+        first_conv_kernel_size  = [7, 5, 3],
         # Architecture (Conv2D blocks)
         n_blocks      = (1, 4),
         filters       = [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]],
