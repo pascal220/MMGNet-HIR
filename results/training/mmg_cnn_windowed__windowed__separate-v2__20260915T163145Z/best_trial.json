@@ -1,0 +1,33 @@
+{
+  "best_epoch": 31,
+  "best_params": {
+    "batch_size": 64,
+    "block_0_dropout": 0.105,
+    "block_0_filters": 64,
+    "block_0_kernel": 7,
+    "block_0_stride": 3,
+    "block_1_dropout": 0.331,
+    "block_1_filters": 128,
+    "block_1_kernel": 5,
+    "block_1_stride": 1,
+    "block_2_dropout": 0.104,
+    "block_2_filters": 16,
+    "block_2_kernel": 7,
+    "block_2_stride": 3,
+    "fc_hidden": "256",
+    "first_conv_filters": 64,
+    "first_conv_kernel_size": 5,
+    "lr_factor": 0.642,
+    "lr_patience": 5,
+    "n_blocks": 3,
+    "optimizer": "SGD"
+	"sgd_l": 0.01
+	"sgd_momentum": 0.835
+	"sgd_wd": 6.07e-06
+  },
+  "best_trial_number": 45,
+  "model_key": "mmg_cnn_windowed",
+  "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+  "objective_value": 0.7371,
+  "study_name": "mmg_cnn_windowed__windowed__separate-v2__20260915T163145Z",
+}
