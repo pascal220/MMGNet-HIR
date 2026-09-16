@@ -578,7 +578,7 @@ class LocomotionMMGCNNWindowTuner:
 
     Searches over:
         First layer  : first_conv_filters, first_conv_kernel_size
-        Architecture : number of Conv2D blocks (1-4), filters per block,
+        Architecture : number of Conv2D blocks (2-4), filters per block,
                        kernel size, stride, dropout per block
         Optimiser    : SGD or Adam (with respective hyperparameters)
         Training     : batch size, lr schedule
@@ -599,7 +599,7 @@ class LocomotionMMGCNNWindowTuner:
         first_conv_filters      = [16, 32, 64, 128],
         first_conv_kernel_size  = [7, 5, 3],
         # Architecture (Conv2D blocks)
-        n_blocks      = (1, 4),
+        n_blocks      = (2, 4),
         filters       = [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]],
         kernel_sizes  = [[7, 5, 3], [5, 3], [3], [3]],
         strides       = [1, 2, 3],

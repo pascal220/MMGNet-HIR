@@ -559,7 +559,7 @@ class LocomotionMMGCNNTuner:
     Wraps an Optuna study to find the best LocomotionMMGCNN hyperparameters.
 
     Searches over:
-        Architecture : number of blocks (1-4), filters per block,
+        Architecture : number of blocks (2-4), filters per block,
                        kernel size per block, stride per block,
                        dropout rate per block, optional FC hidden units
         Optimiser    : SGD or Adam (with respective hyperparameters)
@@ -577,7 +577,7 @@ class LocomotionMMGCNNTuner:
     # Search space bounds
     _SEARCH = dict(
         # Architecture
-        n_blocks      = (1, 4),
+        n_blocks      = (2, 4),
         filters       = [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]],
         kernel_sizes  = [[7, 5, 3], [5, 3], [3], [3]],
         strides       = [1, 2, 3],

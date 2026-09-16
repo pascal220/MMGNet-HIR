@@ -13,7 +13,7 @@ from training_experiment import TrainingRunConfig, run_training_experiment
 def train_and_evaluate_imu_cnn_windows(
     prepared: PreparedData,
     batch_size: int | None = None,
-    checkpoint_path: str | None = "checkpoints/best_window_intent_cnn.pt",
+    checkpoint_path: str | None = "checkpoints/best_window_imu_cnn.pt",
     *,
     n_trials: int = 50,
     timeout: int | None = None,
@@ -34,6 +34,7 @@ def train_and_evaluate_imu_cnn_windows(
         seed=prepared.experiment.config.seed,
         show_progress=show_progress,
         device=device,
+        descriptive_checkpoint_alias=True,
     )
     return run_training_experiment(
         prepared=prepared,

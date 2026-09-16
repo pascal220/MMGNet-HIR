@@ -178,7 +178,7 @@ class TrainingExperimentTests(unittest.TestCase):
         expected_kernels = [[7, 5, 3], [5, 3], [3], [3]]
         for tuner_class in (LocomotionMMGCNNTuner, LocomotionMMGCNNWindowTuner):
             with self.subTest(tuner=tuner_class.__name__):
-                self.assertEqual(tuner_class._SEARCH["n_blocks"], (1, 4))
+                self.assertEqual(tuner_class._SEARCH["n_blocks"], (2, 4))
                 self.assertEqual(tuner_class._SEARCH["filters"], expected_filters)
                 self.assertEqual(tuner_class._SEARCH["kernel_sizes"], expected_kernels)
                 self.assertEqual(tuner_class._SEARCH["batch_size"], [32, 64, 128, 256])

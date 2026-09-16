@@ -11,7 +11,7 @@ from split_utils import validate_prepared_data
 from training_experiment import TrainingRunConfig, run_training_experiment
 
 NUM_CLASSES = 7
-INTENT_CNN_PATH = "checkpoints/best_intent_cnn.pt"
+INTENT_CNN_PATH = "checkpoints/best_imu_cnn.pt"
 GESTURE_CNN_PATH = "checkpoints/best_mmg_cnn.pt"
 FUSION_CNN_PATH = "checkpoints/best_fusion_cnn.pt"
 FUSION_GRU_PATH = "checkpoints/best_fusion_gru.pt"
