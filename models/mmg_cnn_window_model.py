@@ -596,7 +596,7 @@ class LocomotionMMGCNNWindowTuner:
     # Search space bounds
     _SEARCH = dict(
         # NEW: First layer
-        first_conv_filters      = [8, 16, 32, 64, 128, 256],
+        first_conv_filters      = [8, 16, 32],
         first_conv_kernel_size  = [7, 5, 3],
         # Architecture (Conv2D blocks)
         n_blocks      = (2, 4),
