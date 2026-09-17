@@ -79,17 +79,12 @@ def main() -> int:
         description="Prepare volunteer-based train/test tensors."
     )
     parser.add_argument(
-        "--setup",
-        choices=["separate_volunteers", "same_volunteer"],
-        default="separate_volunteers",
-    )
-    parser.add_argument(
         "--same-volunteer-id",
         default=None,
-        help="Volunteer ID for same_volunteer mode (e.g. 4 or N004).",
+        help="Use one volunteer for both splits (e.g. 4 or N004).",
     )
-    parser.add_argument("--train-volunteer-count", type=int, default=2)
-    parser.add_argument("--test-volunteer-count", type=int, default=8)
+    parser.add_argument("--train-volunteer-count", type=int, default=None)
+    parser.add_argument("--test-volunteer-count", type=int, default=None)
     parser.add_argument("--total-budget-gb", type=float, default=10.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test-fraction", type=float, default=0.10)
@@ -124,12 +119,21 @@ def main() -> int:
 
     if not args.train and not args.test:
         parser.error("at least one of --train or --test is required")
+    if args.same_volunteer_id is not None and (
+        args.train_volunteer_count is not None or args.test_volunteer_count is not None
+    ):
+        parser.error(
+            "--same-volunteer-id cannot be combined with --train-volunteer-count "
+            "or --test-volunteer-count"
+        )
+
+    train_volunteer_count = 9 if args.train_volunteer_count is None else args.train_volunteer_count
+    test_volunteer_count = 1 if args.test_volunteer_count is None else args.test_volunteer_count
 
     experiment = prepare_experiment_data(
-        setup=args.setup,
         same_volunteer_id=args.same_volunteer_id,
-        train_volunteer_count=args.train_volunteer_count,
-        test_volunteer_count=args.test_volunteer_count,
+        train_volunteer_count=train_volunteer_count,
+        test_volunteer_count=test_volunteer_count,
         total_budget_gb=args.total_budget_gb,
         seed=args.seed,
         test_fraction=args.test_fraction,

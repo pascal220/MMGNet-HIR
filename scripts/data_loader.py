@@ -24,8 +24,10 @@ from dataset_registry import (
     DatasetRegistry,
     LABEL_TO_CLASS,
     RegistryColumns,
+    SampleColumns,
     build_sample_table,
     exclude_samples,
+    sample_bytes,
 )
 from datasets import SOURCE_FILE, ModalityTensors, SingleModalityDataset
 from memory_manager import MemoryBudget, plan_resident_set
@@ -44,22 +46,22 @@ MMG_SOURCE_FILE = "mmg_source_file"
 class ExperimentConfig:
     """Configuration for one reproducible volunteer-based experiment."""
 
-    setup: str = "separate_volunteers"
     same_volunteer_id: int | str | None = None
     train_volunteer_count: int = 8
     test_volunteer_count: int = 2
     total_budget_gb: float = 24.0
     seed: int = 42
     test_fraction: float = 0.10
-    just_states_ratio: float = 1.10
+    just_states_ratio: float = 1.05
     batch_size: int = 32
+
+    @property
+    def setup(self) -> str:
+        """Return the derived experiment mode retained for artifact compatibility."""
+        return "same_volunteer" if self.same_volunteer_id is not None else "separate_volunteers"
 
     def validate(self) -> None:
         """Validate configuration values before scanning or loading data."""
-        if self.setup not in {"same_volunteer", "separate_volunteers"}:
-            raise ValueError(
-                "setup must be 'same_volunteer' or 'separate_volunteers'."
-            )
         if self.total_budget_gb <= 0:
             raise ValueError("total_budget_gb must be positive.")
         if not 0 < self.test_fraction < 1:
@@ -68,8 +70,6 @@ class ExperimentConfig:
             raise ValueError("just_states_ratio must be positive.")
         if self.batch_size < 1:
             raise ValueError("batch_size must be a positive integer.")
-        if self.setup == "same_volunteer" and self.same_volunteer_id is None:
-            raise ValueError("same_volunteer_id is required in same_volunteer mode.")
 
 
 @dataclass(frozen=True)
@@ -80,6 +80,8 @@ class SelectedData:
     mandatory_test: pd.DataFrame
     optional_train: pd.DataFrame
     optional_test: pd.DataFrame
+    train_volunteer_ids: tuple[str, ...]
+    test_volunteer_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -147,9 +149,7 @@ def _select_experiment_data(
     """Choose the transition and just_states samples for each split."""
     combined = pd.concat([folder_1_df, folder_2_df], ignore_index=True)
 
-    if config.setup == "same_volunteer":
-        if config.same_volunteer_id is None:
-            raise ValueError("same_volunteer_id is required in same_volunteer mode.")
+    if config.same_volunteer_id is not None:
         volunteer_id = registry.normalize_volunteer_id(config.same_volunteer_id)
         trans_train, trans_test = registry.split_transitions_by_fraction(
             combined,
@@ -172,7 +172,10 @@ def _select_experiment_data(
             ratio=config.just_states_ratio,
             seed=config.seed,
         )
-        return SelectedData(trans_train, trans_test, js_train, js_test)
+        return SelectedData(
+            trans_train, trans_test, js_train, js_test,
+            (volunteer_id,), (volunteer_id,),
+        )
 
     # Volunteer-level split: no within-volunteer test extraction.
     transitions_all = registry.get_valid_transitions(combined)
@@ -186,14 +189,22 @@ def _select_experiment_data(
     trans_test = build_sample_table(trans_test_rows)
 
     # Train and test volunteers are disjoint, so the pools cannot overlap.
-    js_pool = build_sample_table(folder_2_df)
+    train_volunteer_ids = tuple(sorted(trans_train_rows[RegistryColumns.VOLUNTEER_ID].unique()))
+    test_volunteer_ids = tuple(sorted(trans_test_rows[RegistryColumns.VOLUNTEER_ID].unique()))
+    selected_volunteers = set(train_volunteer_ids) | set(test_volunteer_ids)
+    js_pool = build_sample_table(
+        folder_2_df[folder_2_df[RegistryColumns.VOLUNTEER_ID].isin(selected_volunteers)]
+    )
     js_train = registry.match_just_states(
         trans_train, js_pool, ratio=config.just_states_ratio, seed=config.seed
     )
     js_test = registry.match_just_states(
         trans_test, js_pool, ratio=config.just_states_ratio, seed=config.seed
     )
-    return SelectedData(trans_train, trans_test, js_train, js_test)
+    return SelectedData(
+        trans_train, trans_test, js_train, js_test,
+        train_volunteer_ids, test_volunteer_ids,
+    )
 
 
 def _build_bundles(
@@ -247,8 +258,42 @@ def _log_class_distribution(name: str, samples: pd.DataFrame) -> None:
     )
 
 
+def _format_bytes(value: int) -> str:
+    """Format a byte count using the largest appropriate binary unit."""
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    size = float(value)
+    for unit in units[:-1]:
+        if size < 1024:
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.2f} {unit}"
+        size /= 1024
+    return f"{size:.2f} {units[-1]}"
+
+
+def _log_split_summary(
+    split: str,
+    requested: pd.DataFrame,
+    resident: pd.DataFrame,
+) -> None:
+    """Log requested and resident sample counts and two-modality memory sizes."""
+    requested_bytes = sample_bytes(requested)
+    resident_bytes = sample_bytes(resident)
+    requested_states = requested[requested[RegistryColumns.FOLDER] == "folder_2"]
+    resident_states = resident[resident[RegistryColumns.FOLDER] == "folder_2"]
+    source_files = set(resident[SampleColumns.IMU_PATH]) | set(resident[SampleColumns.MMG_PATH])
+    logger.info(
+        "%s requested: %d samples | %s | %d transition + %d just_states",
+        split, len(requested), _format_bytes(requested_bytes),
+        len(requested) - len(requested_states), len(requested_states),
+    )
+    logger.info(
+        "%s loaded:    %d samples | %s | %d source files | dropped %d just_states (%s)",
+        split, len(resident), _format_bytes(resident_bytes), len(source_files),
+        len(requested_states) - len(resident_states),
+        _format_bytes(sample_bytes(requested_states) - sample_bytes(resident_states)),
+    )
+
+
 def prepare_experiment_data(
-    setup: str = "separate_volunteers",
     same_volunteer_id: int | str | None = None,
     train_volunteer_count: int = 8,
     test_volunteer_count: int = 2,
@@ -265,7 +310,6 @@ def prepare_experiment_data(
     ``train_mmg``/``test_mmg`` as ``(N, 4, 40, 125, 5)``.
     """
     config = ExperimentConfig(
-        setup=setup,
         same_volunteer_id=same_volunteer_id,
         train_volunteer_count=train_volunteer_count,
         test_volunteer_count=test_volunteer_count,
@@ -301,6 +345,18 @@ def prepare_experiment_data(
     test_samples = pd.concat(
         [selected.mandatory_test, plan.optional_test], ignore_index=True
     )
+    requested_train = pd.concat(
+        [selected.mandatory_train, selected.optional_train], ignore_index=True
+    )
+    requested_test = pd.concat(
+        [selected.mandatory_test, selected.optional_test], ignore_index=True
+    )
+
+    logger.info(
+        "Experiment mode: %s | seed=%d | train volunteers=%s | test volunteers=%s",
+        config.setup, config.seed, list(selected.train_volunteer_ids),
+        list(selected.test_volunteer_ids),
+    )
 
     bundles = _build_bundles(train_samples, test_samples)
     resident = sum(bundle.nbytes for bundle in bundles.values())
@@ -312,11 +368,9 @@ def prepare_experiment_data(
         )
 
     loaders = _build_loaders(bundles, config.batch_size, config.seed)
-    logger.info(
-        "Prepared %s mode: train %d samples | test %d samples | %.2f GiB resident",
-        config.setup, len(train_samples), len(test_samples),
-        resident / 1024 ** 3,
-    )
+    _log_split_summary("Train", requested_train, train_samples)
+    _log_split_summary("Test", requested_test, test_samples)
+    logger.info("Total loaded: %d samples | %s", len(train_samples) + len(test_samples), _format_bytes(resident))
     _log_class_distribution("Train", train_samples)
     _log_class_distribution("Test", test_samples)
     for name in ("train_imu", "train_mmg"):

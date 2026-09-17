@@ -221,7 +221,7 @@ def main() -> None:
 
     # Single volunteer: the 10% draw applies here.
     cfg = ExperimentConfig(
-        setup="same_volunteer", same_volunteer_id=volunteers[0], total_budget_gb=24.0
+        same_volunteer_id=volunteers[0], total_budget_gb=24.0
     )
     selected, plan, train, test, budget = run_pipeline(cfg, registry, f1, f2)
     verify_selection(f"same_volunteer {volunteers[0]}", cfg, selected, plan, train, test)
@@ -240,7 +240,6 @@ def main() -> None:
 
     # Multi-volunteer: selection only, to keep the run quick.
     cfg2 = ExperimentConfig(
-        setup="separate_volunteers",
         train_volunteer_count=len(volunteers) - 2,
         test_volunteer_count=2,
         total_budget_gb=24.0,
@@ -260,7 +259,6 @@ def main() -> None:
         sample_bytes(selected2.optional_train) + sample_bytes(selected2.optional_test)
     ) / BYTES_PER_GB
     cfg3 = ExperimentConfig(
-        setup="separate_volunteers",
         train_volunteer_count=len(volunteers) - 2,
         test_volunteer_count=2,
         total_budget_gb=round(mandatory_gib + optional_gib * 0.3, 3),

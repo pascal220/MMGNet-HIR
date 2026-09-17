@@ -304,13 +304,7 @@ class DatasetRegistry:
         df = pd.DataFrame(records)
         df = self._cast_dtypes(df)
 
-        volunteer_count = df[RegistryColumns.VOLUNTEER_ID].nunique()
-        logger.info(
-            f"Registry '{folder_tag}' complete: {len(df)} files | "
-            f"{volunteer_count} volunteers | "
-            f"{df[RegistryColumns.SAMPLES].sum()} examples | "
-            f"{df[RegistryColumns.RESIDENT_BYTES].sum() / (1024 ** 3):.2f} GiB resident"
-        )
+        logger.info("Registry '%s' indexed: %d usable files", folder_tag, len(df))
 
         return df
 
@@ -335,7 +329,10 @@ class DatasetRegistry:
         df_2 = self.build_from_folder(folder_2, folder_tag="folder_2")
 
         self._df = pd.concat([df_1, df_2], ignore_index=True)
-        logger.info(f"Dual-folder registries complete: {len(df_1)} + {len(df_2)} files")
+        logger.info(
+            "Discovery complete: %d files across both folders (%d transitions, %d just_states)",
+            len(df_1) + len(df_2), len(df_1), len(df_2),
+        )
 
         return df_1, df_2
 
