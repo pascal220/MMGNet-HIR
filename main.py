@@ -127,8 +127,8 @@ def main() -> int:
             "or --test-volunteer-count"
         )
 
-    train_volunteer_count = 9 if args.train_volunteer_count is None else args.train_volunteer_count
-    test_volunteer_count = 1 if args.test_volunteer_count is None else args.test_volunteer_count
+    train_volunteer_count = 5 if args.train_volunteer_count is None else args.train_volunteer_count
+    test_volunteer_count = 5 if args.test_volunteer_count is None else args.test_volunteer_count
 
     experiment = prepare_experiment_data(
         same_volunteer_id=args.same_volunteer_id,
