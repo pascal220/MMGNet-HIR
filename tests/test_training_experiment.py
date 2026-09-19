@@ -34,7 +34,10 @@ from fusion_gru_window_model import FusionGRUWindowTuner
 from imu_cnn_model import IntentCNNTuner
 from imu_cnn_window_model import IntentCNNWindowTuner
 from mmg_cnn_model import LocomotionMMGCNNTuner
-from mmg_cnn_window_model import LocomotionMMGCNNWindowTuner
+from mmg_cnn_window_model import (
+    LocomotionMMGCNNWindow,
+    LocomotionMMGCNNWindowTuner,
+)
 
 
 class _FakeFigure:
@@ -174,14 +177,52 @@ class TrainingExperimentTests(unittest.TestCase):
                 self.assertTrue(callable(getattr(tuner_class, "_build_best_model", None)))
 
     def test_mmg_tuners_use_block_specific_search_spaces(self) -> None:
-        expected_filters = [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]]
-        expected_kernels = [[7, 5, 3], [5, 3], [3], [3]]
-        for tuner_class in (LocomotionMMGCNNTuner, LocomotionMMGCNNWindowTuner):
+        expected_spaces = {
+            LocomotionMMGCNNTuner: {
+                "n_blocks": (3, 5),
+                "filters": [
+                    [8, 16, 32], [16, 32, 64], [32, 64, 128],
+                    [64, 128, 256], [128, 256, 512],
+                ],
+                "kernel_sizes": [[7, 5], [7, 5, 3], [5, 3], [5, 3], [3]],
+                "batch_size": [32, 64, 128],
+            },
+            LocomotionMMGCNNWindowTuner: {
+                "n_blocks": (2, 4),
+                "filters": [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]],
+                "kernel_sizes": [[7, 5], [7, 5, 3], [5, 3], [3]],
+                "batch_size": [32, 64, 128, 256],
+            },
+        }
+        for tuner_class, expected in expected_spaces.items():
             with self.subTest(tuner=tuner_class.__name__):
-                self.assertEqual(tuner_class._SEARCH["n_blocks"], (2, 4))
-                self.assertEqual(tuner_class._SEARCH["filters"], expected_filters)
-                self.assertEqual(tuner_class._SEARCH["kernel_sizes"], expected_kernels)
-                self.assertEqual(tuner_class._SEARCH["batch_size"], [32, 64, 128, 256])
+                self.assertEqual(tuner_class._SEARCH["n_blocks"], expected["n_blocks"])
+                self.assertEqual(tuner_class._SEARCH["filters"], expected["filters"])
+                self.assertEqual(tuner_class._SEARCH["kernel_sizes"], expected["kernel_sizes"])
+                self.assertEqual(
+                    tuner_class._SEARCH["strides"],
+                    [[3], [2, 1], [2, 1], [2, 1], [1]],
+                )
+                self.assertEqual(tuner_class._SEARCH["batch_size"], expected["batch_size"])
+
+    def test_window_mmg_conv3d_collapses_window_axis_without_pooling(self) -> None:
+        model = LocomotionMMGCNNWindow(
+            in_channels=5,
+            num_classes=7,
+            first_conv_filters=4,
+            first_conv_kernel_freq=3,
+            first_conv_kernel_time=3,
+            block_filters=[4, 4],
+            kernel_sizes=[3, 3],
+            strides=[3, 1],
+            dropout_rates=[0.0, 0.0],
+        )
+
+        self.assertFalse(hasattr(model, "window_pool"))
+        inputs = torch.randn(2, 5, 40, 125, 4)
+        first_conv_output = model.relu(model.bn_first(model.first_conv(inputs)))
+        self.assertEqual(first_conv_output.shape[-1], 1)
+        self.assertEqual(model(inputs).shape, (2, 7))
 
     def test_window_mmg_tuner_uses_one_first_conv_kernel_size(self) -> None:
         self.assertEqual(LocomotionMMGCNNWindowTuner._SEARCH["first_conv_kernel_size"], [7, 5, 3],)

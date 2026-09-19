@@ -158,12 +158,11 @@ class _FrozenBackbones(nn.Module):
             imu_features = imu_x.squeeze(-1)  # (batch, imu_feature_dim)
 
             # ── MMG features ────────────────────────────────────────────────
-            # Forward through: first_conv → window_pool → conv_blocks → global_pool
+            # Forward through: first_conv → squeeze → conv_blocks → global_pool
             mmg_x = x_mmg
             mmg_x = self.mmg_backbone.first_conv(mmg_x)
             mmg_x = self.mmg_backbone.bn_first(mmg_x)
             mmg_x = self.mmg_backbone.relu(mmg_x)
-            mmg_x = self.mmg_backbone.window_pool(mmg_x)
             mmg_x = mmg_x.squeeze(-1)
             mmg_x = self.mmg_backbone.conv_blocks(mmg_x)
             mmg_x = self.mmg_backbone.global_pool(mmg_x)

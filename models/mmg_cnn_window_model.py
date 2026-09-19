@@ -7,7 +7,7 @@
 # Amendments vs. original mmg_cnn_model.py:
 #   - Input shape  : (batch, 5, 40, 125, 4) with 4 overlapping windows
 #   - First layer  : Conv3D on (40, 125, 4) volume dimensions
-#   - Window collapse: GlobalMaxPool3D after first conv
+#   - Window collapse: Conv3D kernel spans all 4 windows, then squeeze
 #   - Conv Block 1 : Replaced by new Conv3D layer
 #   - Rest of architecture: Conv2D blocks 2, 3, 4 unchanged
 #   - Optuna HPO   : Added first_conv_filters and first_conv_kernel_size
@@ -113,8 +113,9 @@ class LocomotionMMGCNNWindow(nn.Module):
     Processes CWT scalogram windows of shape (batch, channels, freq, time, windows).
 
     The first layer is a Conv3D that processes the 3D volume (freq, time, windows),
-    followed by GlobalMaxPool3D to collapse the window dimension. The output then
-    feeds into the remaining Conv2D blocks from the original architecture.
+    The Conv3D kernel spans all 4 windows, so the output window dimension is
+    already 1 before it is squeezed. The output then feeds into the remaining
+    Conv2D blocks from the original architecture.
 
     Args:
         in_channels             : CWT input channels / sensors  (default 5)
@@ -163,9 +164,6 @@ class LocomotionMMGCNNWindow(nn.Module):
         )
         self.bn_first = nn.BatchNorm3d(first_conv_filters)
         self.relu = nn.ReLU(inplace=True)
-
-        # ── Collapse window dimension via GlobalMaxPool ──────────────────────
-        self.window_pool = nn.AdaptiveMaxPool3d((None, None, 1))
 
         # ── Build Conv2D blocks dynamically (blocks 2, 3, 4 from original) ──
         blocks     = []
@@ -249,8 +247,7 @@ class LocomotionMMGCNNWindow(nn.Module):
         x = self.bn_first(x)
         x = self.relu(x)
 
-        # Collapse window dimension
-        x = self.window_pool(x)         # (batch, first_conv_filters, 40, 125, 1)
+        # Conv3D kernel spans all four windows, leaving a singleton dimension.
         x = x.squeeze(-1)               # (batch, first_conv_filters, 40, 125)
 
         # Conv2D blocks (unchanged from original)
@@ -595,29 +592,31 @@ class LocomotionMMGCNNWindowTuner:
 
     # Search space bounds
     _SEARCH = dict(
-        # NEW: First layer
-        first_conv_filters      = [8, 16, 32, 64, 128, 256],
+        first_conv_filters      = [8, 16, 32, 64, 128],
         first_conv_kernel_size  = [7, 5, 3],
         # Architecture (Conv2D blocks)
-        n_blocks      = (2, 5),
+        n_blocks      = (2, 4),
         filters       = [
-            [8, 16, 32, 64, 128, 256],
-            [8, 16, 32, 64, 128, 256],
-            [8, 16, 32, 64, 128, 256],
-            [8, 16, 32, 64, 128, 256],
-            [8, 16, 32, 64, 128, 256],
+            [8, 16, 32],
+            [16, 32, 64],
+            [32, 64, 128],
+            [64, 128, 256],
         ],
         kernel_sizes  = [
+            [7, 5],
             [7, 5, 3],
-            [3, 5, 7],
-            [3, 5, 7],
-            [3, 5, 7],
-            [3, 5, 7]
+            [5, 3],
+            [3],
         ],
-        strides       = [1, 2, 3],
+        strides = [
+            [3], 
+            [2, 1], 
+            [2, 1], 
+            [1]
+        ],
         dropout_rates = (0.1, 0.25),
         # Classifier
-        fc_hidden     = [64, 128, 256, 512],
+        fc_hidden     = [128, 256, 512],
         # Training
         batch_size    = [32, 64, 128, 256],
         epochs        = 50,                         # fixed per trial
@@ -636,7 +635,7 @@ class LocomotionMMGCNNWindowTuner:
         lr_min        = 1e-7,
     )
 
-    # Fixed input spatial dims after the first Conv3D + window pool: (freq=40, time=125)
+    # Fixed input spatial dims after the first Conv3D: (freq=40, time=125)
     _INPUT_FREQ_DIM = 40
     _INPUT_TIME_DIM = 125
 
@@ -719,7 +718,7 @@ class LocomotionMMGCNNWindowTuner:
                 f"block_{i}_kernel", self.search["kernel_sizes"][i]
             )
             stride = trial.suggest_categorical(
-                f"block_{i}_stride", self.search["strides"]
+                f"block_{i}_stride", self.search["strides"][i]
             )
             dropout = trial.suggest_float(
                 f"block_{i}_dropout",

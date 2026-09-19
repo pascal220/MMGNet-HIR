@@ -577,26 +577,32 @@ class LocomotionMMGCNNTuner:
     # Search space bounds
     _SEARCH = dict(
         # Architecture
-        n_blocks      = (2, 5),
+        n_blocks      = (3, 5),
         filters       = [
-            [8, 16, 32, 64, 128, 256],
-            [8, 16, 32, 64, 128, 256],
-            [8, 16, 32, 64, 128, 256],
-            [8, 16, 32, 64, 128, 256],
-            [8, 16, 32, 64, 128, 256],
+            [8, 16, 32],
+            [16, 32, 64],
+            [32, 64, 128],
+            [64, 128, 256],
+            [128, 256, 512],
         ],
         kernel_sizes  = [
+            [7, 5],
             [7, 5, 3],
-            [3, 5, 7],
-            [3, 5, 7],
-            [3, 5, 7],
-            [3, 5, 7]
+            [5, 3],
+            [5, 3],
+            [3]
         ],
-        strides       = [1, 2, 3],
+        strides = [
+            [3], 
+            [2, 1], 
+            [2, 1], 
+            [2, 1], 
+            [1]
+        ],
         dropout_rates = (0.1, 0.25),
-        fc_hidden     = [64, 128, 256, 512],
+        fc_hidden     = [128, 256, 512],
         # Training
-        batch_size    = [32, 64, 128, 256],
+        batch_size    = [32, 64, 128],
         epochs        = 50,                      # fixed per Optuna trial
         # SGD
         sgd_lr        = (1e-4, 1e-1),
@@ -692,7 +698,7 @@ class LocomotionMMGCNNTuner:
             )
             strides.append(
                 trial.suggest_categorical(
-                    f"block_{i}_stride", self.search["strides"]
+                    f"block_{i}_stride", self.search["strides"][i]
                 )
             )
             dropout_rates.append(
