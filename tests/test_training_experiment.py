@@ -308,7 +308,7 @@ class TrainingExperimentTests(unittest.TestCase):
                 run_id="test-run",
                 run_dir=run_dir,
                 checkpoint=run_dir / "model.pt",
-                study_database=run_dir / "study.sqlite3",
+                study_journal=run_dir / "study.journal",
                 trials_csv=run_dir / "trials.csv",
                 best_trial_json=run_dir / "best_trial.json",
                 history_json=run_dir / "training_history.json",
@@ -367,6 +367,7 @@ class TrainingExperimentTests(unittest.TestCase):
             run_dir = Path(result["artifact_dir"])
             self.assertTrue(Path(result["checkpoint_path"]).is_file())
             self.assertTrue(Path(result["study_path"]).is_file())
+            self.assertEqual(Path(result["study_path"]).name, "study.journal")
             self.assertTrue(Path(result["trials_csv_path"]).is_file())
             self.assertTrue(Path(result["best_trial_json_path"]).is_file())
             best_trial = __import__("json").loads(
@@ -388,6 +389,7 @@ class TrainingExperimentTests(unittest.TestCase):
             self.assertEqual(manifest["environment"]["compute_device"]["requested"], "cpu")
             self.assertEqual(manifest["environment"]["compute_device"]["resolved"], "cpu")
             self.assertEqual(manifest["artifacts"]["best_trial_json"], "best_trial.json")
+            self.assertEqual(manifest["artifacts"]["study_journal"], "study.journal")
             self.assertEqual(observed_loaders, [(False, False)])
             self.assertEqual(len(list((run_dir / "plots").glob("*.html"))), 4)
             aliases = [Path(path) for path in manifest["artifacts"]["checkpoint_aliases"]]

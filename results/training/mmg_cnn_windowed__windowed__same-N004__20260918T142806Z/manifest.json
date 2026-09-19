@@ -16,7 +16,7 @@
       ],
       "skipped": {}
     },
-    "study_database": "study.sqlite3",
+    "study_journal": "study.journal",
     "trials_csv": "trials.csv"
   },
   "completed_at_utc": "2026-09-19T12:04:13.538963+00:00",

@@ -243,7 +243,7 @@ Each model run is stored under `results/training/<run-id>/` and contains:
 | Artifact | Purpose |
 |----------|---------|
 | `<run-id>.pt` | Final model, optimizer/scheduler state, history, and training config |
-| `study.sqlite3` | Complete resumable Optuna study |
+| `study.journal` | Complete resumable Optuna study journal |
 | `trials.csv` | Portable export of all Optuna trials |
 | `manifest.json` | Model, data, split, dependency, seed, metric, and hash provenance |
 | `training_history.json` | Final all-development-data refit history |

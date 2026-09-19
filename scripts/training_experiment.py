@@ -27,6 +27,8 @@ import numpy as np
 import optuna
 import pandas as pd
 import torch
+from optuna.storages import JournalStorage
+from optuna.storages.journal import JournalFileBackend
 from optuna.visualization import (
     plot_optimization_history,
     plot_parallel_coordinate,
@@ -80,7 +82,7 @@ class RunArtifacts:
     run_id: str
     run_dir: Path
     checkpoint: Path
-    study_database: Path
+    study_journal: Path
     trials_csv: Path
     best_trial_json: Path
     history_json: Path
@@ -250,7 +252,7 @@ def create_run_artifacts(
         run_id=run_id,
         run_dir=run_dir,
         checkpoint=run_dir / f"{run_id}.pt",
-        study_database=run_dir / "study.sqlite3",
+        study_journal=run_dir / "study.journal",
         trials_csv=run_dir / "trials.csv",
         best_trial_json=run_dir / "best_trial.json",
         history_json=run_dir / "training_history.json",
@@ -259,9 +261,9 @@ def create_run_artifacts(
     )
 
 
-def sqlite_url(path: Path) -> str:
-    """Return a cross-platform absolute SQLAlchemy URL for an Optuna database."""
-    return f"sqlite:///{path.resolve().as_posix()}"
+def journal_storage(path: Path) -> JournalStorage:
+    """Return file-backed Optuna journal storage with no database dependency."""
+    return JournalStorage(JournalFileBackend(str(path)))
 
 
 def export_study(study: optuna.Study, artifacts: RunArtifacts) -> dict[str, Any]:
@@ -285,12 +287,16 @@ def export_study(study: optuna.Study, artifacts: RunArtifacts) -> dict[str, Any]
 
 
 def _close_study_storage(study: optuna.Study) -> None:
-    """Release SQLite handles so completed run directories are movable on Windows."""
+    """Release Optuna's storage session after a completed training run."""
     storage = study._storage
-    backend = getattr(storage, "_backend", storage)
-    remove_session = getattr(backend, "remove_session", None)
+    remove_session = getattr(storage, "remove_session", None)
     if callable(remove_session):
         remove_session()
+    backend = getattr(storage, "_backend", storage)
+    if backend is not storage:
+        remove_session = getattr(backend, "remove_session", None)
+        if callable(remove_session):
+            remove_session()
     engine = getattr(backend, "engine", None)
     if engine is not None:
         engine.dispose()
@@ -505,7 +511,7 @@ def run_training_experiment(
             "device": str(device),
         },
     )
-    storage = sqlite_url(artifacts.study_database)
+    storage = journal_storage(artifacts.study_journal)
     tuner.run(
         n_trials=run_config.n_trials,
         timeout=run_config.timeout,
@@ -658,7 +664,7 @@ def run_training_experiment(
             "checkpoint_sha256": _sha256(artifacts.checkpoint),
             "checkpoint_aliases": aliases,
             "checkpoint_alias_saved_at_utc": saved_at.isoformat(),
-            "study_database": artifacts.study_database.name,
+            "study_journal": artifacts.study_journal.name,
             "trials_csv": artifacts.trials_csv.name,
             "best_trial_json": artifacts.best_trial_json.name,
             "plots": plots,
@@ -689,7 +695,7 @@ def run_training_experiment(
         "checkpoint_path": str(artifacts.checkpoint),
         "manifest_path": str(artifacts.manifest_json),
         "best_trial_json_path": str(artifacts.best_trial_json),
-        "study_path": str(artifacts.study_database),
+        "study_path": str(artifacts.study_journal),
         "trials_csv_path": str(artifacts.trials_csv),
         "history": history,
         "selection": selection,
