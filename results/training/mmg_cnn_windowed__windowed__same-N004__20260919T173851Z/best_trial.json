@@ -1,0 +1,31 @@
+{
+  "best_epoch": 47,
+  "best_params": {
+    "batch_size": 32,
+    "block_0_dropout": 0.13971422560893054,
+    "block_0_filters": 16,
+    "block_0_kernel": 5,
+    "block_0_stride": 3,
+    "block_1_dropout": 0.19923539073478805,
+    "block_1_filters": 32,
+    "block_1_kernel": 3,
+    "block_1_stride": 1,
+    "fc_hidden": "512",
+    "first_conv_filters": 128,
+    "first_conv_kernel_size": 5,
+    "lr_factor": 0.583884184101281,
+    "lr_patience": 5,
+    "n_blocks": 2,
+    "optimizer": "SGD",
+    "sgd_lr": 0.020773026448832135,
+    "sgd_momentum": 0.8047627805635702,
+    "sgd_wd": 1.5566915563495948e-06
+  },
+  "best_trial_number": 46,
+  "model_key": "mmg_cnn_windowed",
+  "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+  "objective_value": 0.570503455328039,
+  "study_name": "mmg_cnn_windowed__windowed__same-N004__20260919T173851Z",
+  "validation_accuracy": 0.6035502958579881,
+  "validation_macro_f1": 0.5374566147980898
+}

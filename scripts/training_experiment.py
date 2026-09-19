@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 class TrainingRunConfig:
     """Settings shared by every model-specific training entry point."""
 
-    n_trials: int = 50
+    n_trials: int = 100
     timeout: int | None = None
     artifact_root: str = "results/training"
     run_label: str | None = None

@@ -15,7 +15,7 @@ def train_and_evaluate_imu_cnn(
     batch_size: int | None = None,
     checkpoint_path: str | None = "checkpoints/best_imu_cnn.pt",
     *,
-    n_trials: int = 50,
+    n_trials: int = 100,
     timeout: int | None = None,
     artifact_root: str = "results/training",
     run_label: str | None = None,

@@ -570,7 +570,7 @@ class LocomotionMMGCNNTuner:
 
     Usage (Option A — fully automatic):
         tuner      = LocomotionMMGCNNTuner(train_loader, val_loader)
-        best_model = tuner.run(n_trials=50)
+        best_model = tuner.run(n_trials=100)
         tuner.plot_results(save_dir="optuna_plots_dacnn")
     """
 
@@ -834,7 +834,7 @@ class LocomotionMMGCNNTuner:
     # ── Run the study ────────────────────────────────────────────────────────
     def run(
         self,
-        n_trials:      int  = 50,
+        n_trials:      int  = 100,
         timeout:       int | None = None,
         show_progress: bool = True,
         storage: str | None = None,

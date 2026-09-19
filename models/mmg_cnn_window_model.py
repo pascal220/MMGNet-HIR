@@ -586,16 +586,16 @@ class LocomotionMMGCNNWindowTuner:
 
     Usage:
         tuner      = LocomotionMMGCNNWindowTuner(train_loader, val_loader)
-        best_model = tuner.run(n_trials=50)
+        best_model = tuner.run(n_trials=100)
         tuner.plot_results(save_dir="optuna_plots")
     """
 
     # Search space bounds
     _SEARCH = dict(
-        first_conv_filters      = [8, 16, 32, 64, 128],
+        first_conv_filters      = [128, 256, 512],
         first_conv_kernel_size  = [7, 5, 3],
         # Architecture (Conv2D blocks)
-        n_blocks      = (2, 4),
+        n_blocks      = (3, 4),
         filters       = [
             [8, 16, 32],
             [16, 32, 64],
@@ -859,7 +859,7 @@ class LocomotionMMGCNNWindowTuner:
     # ── Run the study ────────────────────────────────────────────────────────
     def run(
         self,
-        n_trials:      int  = 50,
+        n_trials:      int  = 100,
         timeout:       int | None = None,
         show_progress: bool = True,
         storage: str | None = None,
