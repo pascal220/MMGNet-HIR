@@ -27,6 +27,7 @@ from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
 
 from device_utils import resolve_device
+from early_stopping import EarlyStopping
 
 # Optuna visualisation (requires optuna[visualization] and plotly)
 try:
@@ -400,6 +401,7 @@ class IntentCNNTrainer:
             history dict
         """
         n_epochs = epochs or self.cfg["epochs"]
+        early_stopping = EarlyStopping.from_config(self.model, self.cfg)
 
         for epoch in range(1, n_epochs + 1):
             tr_loss, tr_acc, _ = self._run_epoch(train_loader, training=True)
@@ -431,6 +433,8 @@ class IntentCNNTrainer:
                     if trial.should_prune():
                         raise optuna.exceptions.TrialPruned()
 
+            should_stop = early_stopping.update(epoch, {"train_loss": tr_loss})
+
             if verbose:
                 lr_now = self.scheduler.get_last_lr()[0]
                 print(
@@ -441,6 +445,18 @@ class IntentCNNTrainer:
                     f"  lr: {lr_now:.6f}"
                 )
 
+            if should_stop:
+                if verbose:
+                    print(
+                        f"[EarlyStopping] Stopping at epoch {epoch}; "
+                        f"best {early_stopping.monitor} was "
+                        f"{early_stopping.best_value:.6f} at epoch "
+                        f"{early_stopping.best_epoch}."
+                    )
+                break
+
+        early_stopping.finalize()
+        self.history["early_stopping"] = early_stopping.summary()
         return self.history
 
     # ── Evaluation ──────────────────────────────────────────────────────────

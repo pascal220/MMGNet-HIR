@@ -33,6 +33,7 @@ from torch.utils.data import DataLoader
 from imu_cnn_model   import IntentCNN
 from mmg_cnn_model import LocomotionMMGCNN
 from device_utils import resolve_device
+from early_stopping import EarlyStopping
 
 # Optuna visualisation
 try:
@@ -379,6 +380,7 @@ class FusionCNNTrainer:
         trial:        optuna.Trial | None = None,
     ) -> dict:
         n_epochs = epochs or self.cfg["epochs"]
+        early_stopping = EarlyStopping.from_config(self.model, self.cfg)
 
         for epoch in range(1, n_epochs + 1):
             tr_loss, tr_acc, _ = self._run_epoch(train_loader, training=True)
@@ -408,6 +410,7 @@ class FusionCNNTrainer:
                         raise optuna.exceptions.TrialPruned()
 
             self.scheduler.step(v_loss)
+            should_stop = early_stopping.update(epoch, {"train_loss": tr_loss})
 
             if verbose:
                 lr_now = self.optimizer.param_groups[0]["lr"]
@@ -419,6 +422,18 @@ class FusionCNNTrainer:
                     f"  lr: {lr_now:.6f}"
                 )
 
+            if should_stop:
+                if verbose:
+                    print(
+                        f"[EarlyStopping] Stopping at epoch {epoch}; "
+                        f"best {early_stopping.monitor} was "
+                        f"{early_stopping.best_value:.6f} at epoch "
+                        f"{early_stopping.best_epoch}."
+                    )
+                break
+
+        early_stopping.finalize()
+        self.history["early_stopping"] = early_stopping.summary()
         return self.history
 
     def evaluate(self, loader: DataLoader) -> dict:

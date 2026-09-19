@@ -27,6 +27,7 @@ from training_experiment import (
     normalize_training_params,
     run_training_experiment,
 )
+from early_stopping import EarlyStopping
 from fusion_cnn_model import FusionCNNTuner
 from fusion_cnn_window_model import FusionCNNWindowTuner
 from fusion_gru_model import FusionGRUTuner
@@ -185,12 +186,14 @@ class TrainingExperimentTests(unittest.TestCase):
                     [64, 128, 256], [128, 256, 512],
                 ],
                 "kernel_sizes": [[7, 5], [7, 5, 3], [5, 3], [5, 3], [3]],
+                "strides": [[3], [2, 1], [2, 1], [2, 1], [1]],
                 "batch_size": [32, 64, 128],
             },
             LocomotionMMGCNNWindowTuner: {
-                "n_blocks": (2, 4),
+                "n_blocks": (3, 4),
                 "filters": [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]],
                 "kernel_sizes": [[7, 5], [7, 5, 3], [5, 3], [3]],
+                "strides": [[3], [2, 1], [2, 1], [1]],
                 "batch_size": [32, 64, 128, 256],
             },
         }
@@ -199,10 +202,7 @@ class TrainingExperimentTests(unittest.TestCase):
                 self.assertEqual(tuner_class._SEARCH["n_blocks"], expected["n_blocks"])
                 self.assertEqual(tuner_class._SEARCH["filters"], expected["filters"])
                 self.assertEqual(tuner_class._SEARCH["kernel_sizes"], expected["kernel_sizes"])
-                self.assertEqual(
-                    tuner_class._SEARCH["strides"],
-                    [[3], [2, 1], [2, 1], [2, 1], [1]],
-                )
+                self.assertEqual(tuner_class._SEARCH["strides"], expected["strides"])
                 self.assertEqual(tuner_class._SEARCH["batch_size"], expected["batch_size"])
 
     def test_window_mmg_conv3d_collapses_window_axis_without_pooling(self) -> None:
@@ -309,6 +309,10 @@ class TrainingExperimentTests(unittest.TestCase):
     def test_training_run_config_defaults_timeout_to_none(self) -> None:
         config = TrainingRunConfig()
         self.assertIsNone(config.timeout)
+        self.assertEqual(config.final_refit_epochs, 100)
+        self.assertEqual(config.final_refit_early_stopping_patience, 10)
+        self.assertEqual(config.final_refit_early_stopping_min_delta, 1e-4)
+        self.assertTrue(config.final_refit_restore_best_weights)
         config.validate()
 
         invalid_config = TrainingRunConfig(timeout=0)
@@ -318,6 +322,42 @@ class TrainingExperimentTests(unittest.TestCase):
         invalid_refit_config = TrainingRunConfig(final_refit_epochs=0)
         with self.assertRaisesRegex(ValueError, "final_refit_epochs must be at least 1 or None."):
             invalid_refit_config.validate()
+
+        invalid_patience_config = TrainingRunConfig(final_refit_early_stopping_patience=0)
+        with self.assertRaisesRegex(ValueError, "final_refit_early_stopping_patience"):
+            invalid_patience_config.validate()
+
+        invalid_delta_config = TrainingRunConfig(final_refit_early_stopping_min_delta=-1e-4)
+        with self.assertRaisesRegex(ValueError, "final_refit_early_stopping_min_delta"):
+            invalid_delta_config.validate()
+
+    def test_early_stopping_restores_best_weights(self) -> None:
+        model = torch.nn.Linear(1, 1, bias=False)
+        stopper = EarlyStopping(
+            model,
+            enabled=True,
+            monitor="train_loss",
+            patience=2,
+            min_delta=1e-4,
+            restore_best_weights=True,
+        )
+
+        with torch.no_grad():
+            model.weight.fill_(1.0)
+        self.assertFalse(stopper.update(1, {"train_loss": 1.0}))
+        with torch.no_grad():
+            model.weight.fill_(2.0)
+        self.assertFalse(stopper.update(2, {"train_loss": 0.99995}))
+        with torch.no_grad():
+            model.weight.fill_(3.0)
+        self.assertTrue(stopper.update(3, {"train_loss": 1.1}))
+
+        stopper.finalize()
+        self.assertAlmostEqual(float(model.weight.item()), 1.0)
+        summary = stopper.summary()
+        self.assertEqual(summary["best_epoch"], 1)
+        self.assertEqual(summary["stopped_epoch"], 3)
+        self.assertTrue(summary["restored_best_weights"])
 
     def test_descriptive_checkpoint_alias_uses_single_volunteer_and_accuracy(self) -> None:
         alias = _descriptive_checkpoint_alias(
@@ -425,8 +465,24 @@ class TrainingExperimentTests(unittest.TestCase):
             self.assertEqual(manifest["optimization"]["selection"]["best_epoch"], 2)
             self.assertEqual(manifest["final_refit"]["training_params"]["batch_size"], 8)
             self.assertEqual(manifest["final_refit"]["epochs"], 3)
+            self.assertEqual(manifest["final_refit"]["actual_epochs"], 3)
             self.assertEqual(manifest["final_refit"]["final_training_accuracy"], 0.5)
             self.assertEqual(manifest["final_refit"]["training_params"]["device"], "cpu")
+            self.assertEqual(
+                manifest["final_refit"]["training_params"]["early_stopping_patience"],
+                10,
+            )
+            self.assertEqual(
+                manifest["final_refit"]["training_params"]["early_stopping_min_delta"],
+                1e-4,
+            )
+            self.assertEqual(
+                manifest["final_refit"]["training_params"]["early_stopping_monitor"],
+                "train_loss",
+            )
+            self.assertTrue(
+                manifest["final_refit"]["training_params"]["restore_best_weights"]
+            )
             self.assertEqual(manifest["environment"]["compute_device"]["requested"], "cpu")
             self.assertEqual(manifest["environment"]["compute_device"]["resolved"], "cpu")
             self.assertEqual(manifest["artifacts"]["best_trial_json"], "best_trial.json")

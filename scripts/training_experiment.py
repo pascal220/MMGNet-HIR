@@ -60,7 +60,10 @@ class TrainingRunConfig:
     seed: int = 42
     show_progress: bool = True
     device: str = "auto"
-    final_refit_epochs: int | None = None
+    final_refit_epochs: int | None = 100
+    final_refit_early_stopping_patience: int | None = 10
+    final_refit_early_stopping_min_delta: float = 1e-4
+    final_refit_restore_best_weights: bool = True
     descriptive_checkpoint_alias: bool = False
 
     def validate(self) -> None:
@@ -72,6 +75,15 @@ class TrainingRunConfig:
             raise ValueError("val_fraction must be between 0 and 1.")
         if self.final_refit_epochs is not None and self.final_refit_epochs < 1:
             raise ValueError("final_refit_epochs must be at least 1 or None.")
+        if (
+            self.final_refit_early_stopping_patience is not None
+            and self.final_refit_early_stopping_patience < 1
+        ):
+            raise ValueError(
+                "final_refit_early_stopping_patience must be at least 1 or None."
+            )
+        if self.final_refit_early_stopping_min_delta < 0:
+            raise ValueError("final_refit_early_stopping_min_delta must be non-negative.")
         normalize_device_request(self.device)
 
 
@@ -395,6 +407,19 @@ def _class_distribution(labels: torch.Tensor, num_classes: int) -> dict[str, int
     return {str(index): int(count) for index, count in enumerate(counts.tolist())}
 
 
+def _final_training_accuracy(history: Mapping[str, Sequence[float] | Mapping[str, Any]]) -> float:
+    """Return the training accuracy corresponding to the saved final weights."""
+    accuracies = list(history.get("train_acc", []))
+    if not accuracies:
+        raise ValueError("Final training history must include train_acc.")
+    early_stopping = history.get("early_stopping")
+    if isinstance(early_stopping, Mapping) and early_stopping.get("restored_best_weights"):
+        best_epoch = early_stopping.get("best_epoch")
+        if isinstance(best_epoch, int) and 1 <= best_epoch <= len(accuracies):
+            return float(accuracies[best_epoch - 1])
+    return float(accuracies[-1])
+
+
 def _volunteers(metadata: pd.DataFrame) -> list[str]:
     columns = [column for column in metadata.columns if "volunteer" in str(column).lower()]
     if not columns:
@@ -550,13 +575,25 @@ def run_training_experiment(
     _write_json(artifacts.best_trial_json, best_trial_summary)
 
     final_weights = balanced_class_weights(prepared.y_train, num_classes)
+    final_refit_epochs = run_config.final_refit_epochs or 100
     training_params = normalize_training_params(
         best_trial.params,
-        best_epoch=run_config.final_refit_epochs or int(selection["best_epoch"]),
+        best_epoch=final_refit_epochs,
         class_weights=final_weights,
         fixed_params=tuner.search,
     )
     training_params["device"] = str(device)
+    if run_config.final_refit_early_stopping_patience is not None:
+        training_params["early_stopping_patience"] = int(
+            run_config.final_refit_early_stopping_patience
+        )
+        training_params["early_stopping_monitor"] = "train_loss"
+        training_params["early_stopping_min_delta"] = float(
+            run_config.final_refit_early_stopping_min_delta
+        )
+        training_params["restore_best_weights"] = bool(
+            run_config.final_refit_restore_best_weights
+        )
     final_dataset = _make_dataset(input_tensors, prepared.y_train, nested_inputs)
     final_loader = DataLoader(
         final_dataset,
@@ -580,7 +617,7 @@ def run_training_experiment(
 
     aliases: list[str] = []
     saved_at = datetime.now(timezone.utc)
-    final_training_accuracy = float(history["train_acc"][-1])
+    final_training_accuracy = _final_training_accuracy(history)
     if legacy_checkpoint_path:
         alias = Path(legacy_checkpoint_path)
         if run_config.descriptive_checkpoint_alias:
@@ -652,10 +689,12 @@ def run_training_experiment(
             "search_class_weights": search_weights,
         },
         "final_refit": {
-            "policy": "all non-test development data for configured final epoch count",
+            "policy": "all non-test development data for up to configured final epoch count with train-loss early stopping",
             "epochs": int(training_params["epochs"]),
+            "actual_epochs": len(history.get("train_loss", [])),
             "final_training_accuracy": final_training_accuracy,
             "training_params": training_params,
+            "early_stopping": history.get("early_stopping", {"enabled": False}),
             "class_weights": final_weights,
             "history_path": artifacts.history_json.name,
         },

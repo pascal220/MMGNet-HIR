@@ -34,6 +34,7 @@ def train_and_evaluate_imu_cnn_windows(
         seed=prepared.experiment.config.seed,
         show_progress=show_progress,
         device=device,
+        final_refit_epochs=50,
         descriptive_checkpoint_alias=True,
     )
     return run_training_experiment(
