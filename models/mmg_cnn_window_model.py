@@ -357,7 +357,7 @@ class LocomotionMMGCNNWindowTrainer:
         )
 
         # ── History ──────────────────────────────────────────────────────────
-        self.history = {
+        self.history: dict[str, Any] = {
             "train_loss": [], "train_acc": [],
             "val_loss":   [], "val_acc":   [], "val_f1": [],
         }
@@ -629,7 +629,7 @@ class LocomotionMMGCNNWindowTuner:
             [2, 1], 
             [1]
         ],
-        dropout_rates = (0.1, 0.25),
+        dropout_rates = (0.01, 0.05),
         # Classifier
         fc_hidden     = [128, 256, 512],
         # Training

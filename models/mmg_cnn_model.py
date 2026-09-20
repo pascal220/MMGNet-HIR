@@ -342,7 +342,7 @@ class LocomotionMMGCNNTrainer:
         )
 
         # ── History ──────────────────────────────────────────────────────────
-        self.history = {
+        self.history: dict[str, Any] = {
             "train_loss": [], "train_acc": [],
             "val_loss":   [], "val_acc":   [], "val_f1": [],
         }
@@ -614,7 +614,7 @@ class LocomotionMMGCNNTuner:
             [2, 1], 
             [1]
         ],
-        dropout_rates = (0.1, 0.25),
+        dropout_rates = (0.01, 0.05),
         fc_hidden     = [128, 256, 512],
         # Training
         batch_size    = [32, 64, 128],
