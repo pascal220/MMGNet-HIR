@@ -619,7 +619,7 @@ class LocomotionMMGCNNWindowTuner:
         ],
         kernel_sizes  = [
             [7, 5],
-            [7, 5, 3],
+            [5, 3],
             [5, 3],
             [3],
         ],
@@ -633,7 +633,7 @@ class LocomotionMMGCNNWindowTuner:
         # Classifier
         fc_hidden     = [128, 256, 512],
         # Training
-        batch_size    = [32, 64, 128],
+        batch_size    = [64, 128, 200],
         epochs        = 50,                         # fixed per trial
         # SGD
         sgd_lr        = (1e-4, 1e-1),

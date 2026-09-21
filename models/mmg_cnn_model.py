@@ -617,7 +617,7 @@ class LocomotionMMGCNNTuner:
         dropout_rates = (0.01, 0.05),
         fc_hidden     = [128, 256, 512],
         # Training
-        batch_size    = [32, 64, 128],
+        batch_size    = [64, 128, 200],
         epochs        = 50,                      # fixed per Optuna trial
         # SGD
         sgd_lr        = (1e-4, 1e-1),
