@@ -352,7 +352,7 @@ class IntentCNNWindowTrainer:
         )
 
         # ── History ─────────────────────────────────────────────────────────
-        self.history = {
+        self.history: dict[str, Any] = {
             "train_loss": [], "train_acc": [],
             "val_loss":   [], "val_acc":   [], "val_f1": [],
         }

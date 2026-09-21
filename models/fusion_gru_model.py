@@ -342,7 +342,7 @@ class FusionGRUTrainer:
             min_lr   = self.cfg.get("lr_min",      1e-6),
         )
 
-        self.history = {
+        self.history: dict[str, Any] = {
             "train_loss": [], "train_acc": [],
             "val_loss":   [], "val_acc":   [], "val_f1": [],
         }
