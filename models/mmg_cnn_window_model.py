@@ -629,7 +629,7 @@ class LocomotionMMGCNNWindowTuner:
             [2, 1], 
             [1]
         ],
-        dropout_rates = (0.01, 0.05),
+        dropout_rates = (0.01, 0.1),
         # Classifier
         fc_hidden     = [128, 256, 512],
         # Training
