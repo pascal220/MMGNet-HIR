@@ -1,0 +1,27 @@
+{
+  "best_epoch": 50,
+  "best_params": {
+    "adam_beta1": 0.9305351030202942,
+    "adam_beta2": 0.9541478759711945,
+    "adam_lr": 0.0010321835402327363,
+    "adam_wd": 0.00018524529385509437,
+    "batch_size": 64,
+    "block_0_filters": 64,
+    "block_0_kernel_pair": "(3, 5)",
+    "block_1_filters": 32,
+    "block_1_kernel_pair": "(3, 5)",
+    "first_conv_filters": 128,
+    "first_conv_kernel_width": 7,
+    "lr_decay": 0.4540163640391032,
+    "lr_step_size": 35,
+    "n_blocks": 2,
+    "optimizer": "Adam"
+  },
+  "best_trial_number": 81,
+  "model_key": "imu_cnn_windowed",
+  "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+  "objective_value": 0.8749660261266841,
+  "study_name": "imu_cnn_windowed__windowed__same-11__20260929T193128Z",
+  "validation_accuracy": 0.8785310734463276,
+  "validation_macro_f1": 0.8714009788070406
+}

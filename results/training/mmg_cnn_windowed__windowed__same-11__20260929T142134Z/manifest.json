@@ -1,0 +1,376 @@
+{
+  "artifacts": {
+    "best_trial_json": "best_trial.json",
+    "checkpoint": "mmg_cnn_windowed__windowed__same-11__20260929T142134Z.pt",
+    "checkpoint_alias_saved_at_utc": "2026-09-29T19:31:28.663137+00:00",
+    "checkpoint_aliases": [
+      "checkpoints/best_window_mmg_cnn_2026-09-29_V11_A93.10.pt"
+    ],
+    "checkpoint_sha256": "390137957fcec521a930e45aa9f158c93fee79b6f18da724c6840c45ea8196f1",
+    "plots": {
+      "generated": [
+        "plots/optimization_history.html",
+        "plots/parameter_importances.html",
+        "plots/parallel_coordinate.html",
+        "plots/slice.html"
+      ],
+      "skipped": {}
+    },
+    "study_journal": "study.journal",
+    "trials_csv": "trials.csv"
+  },
+  "completed_at_utc": "2026-09-29T19:31:28.664841+00:00",
+  "data": {
+    "class_distribution": {
+      "0": 686,
+      "1": 1178,
+      "2": 451,
+      "3": 383,
+      "4": 632,
+      "5": 102,
+      "6": 102
+    },
+    "development_rows": 3534,
+    "development_volunteers": [
+      "N011"
+    ],
+    "experiment_config": {
+      "batch_size": 32,
+      "just_states_ratio": 1.05,
+      "same_volunteer_id": "11",
+      "seed": 42,
+      "test_fraction": 0.1,
+      "test_volunteer_count": 5,
+      "total_budget_gb": 10.0,
+      "train_volunteer_count": 5
+    },
+    "group_columns": [
+      "imu_source_file",
+      "source_sample_index"
+    ],
+    "metadata_fingerprint_sha256": "8a55704bb857090067a81ce367e3594b9b1327477627a2e6292f61fa78128602",
+    "search_train_fingerprint_sha256": "4321940c71549f0fae78285e8aaacdb81b601a7f86299c2311acf835e2fdfd2c",
+    "search_train_rows": 3180,
+    "test_set_accessed": false,
+    "validation_fingerprint_sha256": "bc077e95ac778563cf8f4005aa028795bc28978fa09edb4efafa1716a9c30e5b",
+    "validation_fraction": 0.1,
+    "validation_protocol": "single grouped stratified holdout",
+    "validation_rows": 354
+  },
+  "duration_seconds": 18594.460695420003,
+  "environment": {
+    "compute_device": {
+      "cuda_available": true,
+      "cuda_device_count": 1,
+      "cuda_version": "13.0",
+      "cudnn_version": 92000,
+      "device_name": "NVIDIA GeForce RTX 2080",
+      "index": 0,
+      "requested": "auto",
+      "resolved": "cuda",
+      "torch": "2.13.0+cu130",
+      "type": "cuda"
+    },
+    "cuda_available": true,
+    "cuda_version": "13.0",
+    "git": {
+      "commit": "06208812c673cd918ddc69d09aced51cb4531c98",
+      "dirty": false
+    },
+    "numpy": "2.5.2",
+    "optuna": "4.9.0",
+    "pandas": "3.0.5",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "plotly": "7.0.0",
+    "python": "3.13.9 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 19:16:10) [GCC 11.2.0]",
+    "scikit_learn": "1.9.0",
+    "seed": 42,
+    "torch": "2.13.0+cu130"
+  },
+  "final_refit": {
+    "actual_epochs": 100,
+    "class_weights": [
+      0.7359433569346107,
+      0.42857142857142855,
+      1.119417168197656,
+      1.31816486385677,
+      0.7988245931283906,
+      4.949579831932773,
+      4.949579831932773
+    ],
+    "early_stopping": {
+      "best_epoch": 96,
+      "best_value": 0.14912913683601606,
+      "enabled": true,
+      "epochs_without_improvement": 4,
+      "min_delta": 0.0001,
+      "monitor": "train_loss",
+      "patience": 10,
+      "restored_best_weights": true,
+      "stopped_epoch": null
+    },
+    "epochs": 100,
+    "final_training_accuracy": 0.9309564233163554,
+    "history_path": "training_history.json",
+    "policy": "all non-test development data for up to configured final epoch count with train-loss early stopping",
+    "training_params": {
+      "batch_size": 64,
+      "beta1": 0.8582493341518023,
+      "beta2": 0.911187110951295,
+      "class_weights": [
+        0.7359433569346107,
+        0.42857142857142855,
+        1.119417168197656,
+        1.31816486385677,
+        0.7988245931283906,
+        4.949579831932773,
+        4.949579831932773
+      ],
+      "device": "cuda",
+      "early_stopping_min_delta": 0.0001,
+      "early_stopping_monitor": "train_loss",
+      "early_stopping_patience": 10,
+      "epochs": 100,
+      "lr": 0.001354255802250529,
+      "lr_factor": 0.3105224558886164,
+      "lr_min": 1e-07,
+      "lr_patience": 8,
+      "optimizer": "Adam",
+      "restore_best_weights": true,
+      "weight_decay": 1.9168837905156026e-05
+    }
+  },
+  "model": {
+    "class": "LocomotionMMGCNNWindow",
+    "config": {
+      "block_filters": [
+        32,
+        32,
+        64
+      ],
+      "dropout_rates": [
+        0.0794465020076961,
+        0.0102940292363325,
+        0.0581958294545773
+      ],
+      "fc_hidden": 256,
+      "first_conv_filters": 256,
+      "first_conv_kernel_freq": 5,
+      "first_conv_kernel_time": 5,
+      "in_channels": 5,
+      "kernel_sizes": [
+        5,
+        3,
+        3
+      ],
+      "num_classes": 7,
+      "strides": [
+        3,
+        2,
+        2
+      ]
+    },
+    "input_mode": "windowed",
+    "input_shapes": [
+      [
+        5,
+        40,
+        125,
+        4
+      ]
+    ],
+    "key": "mmg_cnn_windowed",
+    "label_mapping": {
+      "0": "sit",
+      "1": "stand",
+      "2": "walking",
+      "3": "sit_to_stand",
+      "4": "stand_to_sit",
+      "5": "stairs_up",
+      "6": "stairs_down"
+    },
+    "model_target": "standalone",
+    "num_classes": 7,
+    "parent_checkpoints": [],
+    "total_parameters": 379655,
+    "trainable_parameters": 379655
+  },
+  "optimization": {
+    "completed_trials_total": 100,
+    "direction": "maximize",
+    "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+    "pruner": "MedianPruner(n_startup_trials=5,n_warmup_steps=10,interval_steps=1)",
+    "raw_best_params": {
+      "adam_beta1": 0.8582493341518023,
+      "adam_beta2": 0.911187110951295,
+      "adam_lr": 0.001354255802250529,
+      "adam_wd": 1.9168837905156026e-05,
+      "batch_size": 64,
+      "block_0_dropout": 0.0794465020076961,
+      "block_0_filters": 32,
+      "block_0_kernel": 5,
+      "block_0_stride": 3,
+      "block_1_dropout": 0.0102940292363325,
+      "block_1_filters": 32,
+      "block_1_kernel": 3,
+      "block_1_stride": 2,
+      "block_2_dropout": 0.0581958294545773,
+      "block_2_filters": 64,
+      "block_2_kernel": 3,
+      "block_2_stride": 2,
+      "fc_hidden": "256",
+      "first_conv_filters": 256,
+      "first_conv_kernel_size": 5,
+      "lr_factor": 0.3105224558886164,
+      "lr_patience": 8,
+      "n_blocks": 3,
+      "optimizer": "Adam"
+    },
+    "requested_additional_trials": 100,
+    "sampler": "TPESampler(seed=42)",
+    "search_class_weights": [
+      0.7362815466543181,
+      0.4285714285714286,
+      1.1189303307529908,
+      1.3205980066445182,
+      0.7983931709766507,
+      4.937888198757764,
+      4.937888198757764
+    ],
+    "search_space": {
+      "adam_beta1": [
+        0.85,
+        0.99
+      ],
+      "adam_beta2": [
+        0.9,
+        0.9999
+      ],
+      "adam_lr": [
+        0.0001,
+        0.01
+      ],
+      "adam_wd": [
+        1e-06,
+        0.01
+      ],
+      "batch_size": [
+        64,
+        128
+      ],
+      "dropout_rates": [
+        0.01,
+        0.1
+      ],
+      "epochs": 50,
+      "fc_hidden": [
+        128,
+        256,
+        512
+      ],
+      "filters": [
+        [
+          8,
+          16,
+          32
+        ],
+        [
+          16,
+          32,
+          64
+        ],
+        [
+          32,
+          64,
+          128
+        ],
+        [
+          64,
+          128,
+          256
+        ]
+      ],
+      "first_conv_filters": [
+        128,
+        256,
+        512
+      ],
+      "first_conv_kernel_size": [
+        7,
+        5,
+        3
+      ],
+      "kernel_sizes": [
+        [
+          7,
+          5
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          3
+        ]
+      ],
+      "lr_factor": [
+        0.1,
+        0.7
+      ],
+      "lr_min": 1e-07,
+      "lr_patience": [
+        5,
+        20
+      ],
+      "n_blocks": [
+        3,
+        4
+      ],
+      "sgd_lr": [
+        0.0001,
+        0.1
+      ],
+      "sgd_momentum": [
+        0.7,
+        0.99
+      ],
+      "sgd_wd": [
+        1e-06,
+        0.01
+      ],
+      "strides": [
+        [
+          3
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          1
+        ]
+      ]
+    },
+    "selection": {
+      "best_epoch": 49,
+      "best_trial_number": 64,
+      "objective_value": 0.780718380668575,
+      "validation_accuracy": 0.7796610169491526,
+      "validation_macro_f1": 0.7817757443879975
+    },
+    "study_name": "mmg_cnn_windowed__windowed__same-11__20260929T142134Z",
+    "timeout_seconds": null
+  },
+  "run_id": "mmg_cnn_windowed__windowed__same-11__20260929T142134Z",
+  "schema_version": 1,
+  "started_at_utc": "2026-09-29T14:21:34.204148+00:00",
+  "status": "completed"
+}
