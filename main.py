@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
 
 from data_loader import PreparedData, prepare_experiment_data, prepare_training_data
+from run_selection import ModelNotAvailableError, RunVerificationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "train"))
 
@@ -15,6 +16,13 @@ from imu_cnn_train import train_and_evaluate_imu_cnn
 from imu_cnn_windows_train import train_and_evaluate_imu_cnn_windows
 from mmg_cnn_train import train_and_evaluate_mmg_cnn
 from mmg_cnn_windows_train import train_and_evaluate_mmg_cnn_windows
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "evaluation"))
+
+from fusion_single_window_eval import evaluate_fusion_single_window
+from fusion_windows_eval import evaluate_fusion_windows
+from standalone_single_window_eval import evaluate_standalone_single_window
+from standalone_windows_eval import evaluate_standalone_windows
 
 
 logging.basicConfig(
@@ -73,6 +81,18 @@ def _run_selected_training(prepared: PreparedData) -> None:
         logger.info("Completed training with %s.", train_and_evaluate.__name__)
 
 
+def _select_evaluate(prepared: PreparedData):
+    """Pick the evaluation entry point matching input_mode and model_target."""
+    if prepared.input_mode == "windowed":
+        if prepared.model_target == "fusion":
+            return evaluate_fusion_windows
+        return evaluate_standalone_windows
+
+    if prepared.model_target == "fusion":
+        return evaluate_fusion_single_window
+    return evaluate_standalone_single_window
+
+
 def main() -> int:
     """Prepare data and run the operation selected by the command-line flags."""
     parser = argparse.ArgumentParser(
@@ -113,7 +133,10 @@ def main() -> int:
     parser.add_argument(
         "--test",
         action="store_true",
-        help="Request testing; testing is not implemented yet.",
+        help=(
+            "Evaluate the latest trained models matching this split on the "
+            "test set and save plots and metrics under results/evaluation."
+        ),
     )
     args = parser.parse_args()
 
@@ -152,12 +175,25 @@ def main() -> int:
     if args.train:
         try:
             _run_selected_training(prepared)
+        except (ModelNotAvailableError, RunVerificationError) as exc:
+            logger.error("Training stopped: %s", exc)
+            return 1
         except Exception:
             logger.exception("Training failed; stopping execution.")
             return 1
 
     if args.test:
-        logger.warning("Testing was requested, but testing is not implemented yet.")
+        evaluate = _select_evaluate(prepared)
+        logger.info("Starting evaluation with %s.", evaluate.__name__)
+        try:
+            evaluate(prepared)
+        except (ModelNotAvailableError, RunVerificationError) as exc:
+            logger.error("Evaluation stopped: %s", exc)
+            return 1
+        except Exception:
+            logger.exception("Evaluation failed; stopping execution.")
+            return 1
+        logger.info("Completed evaluation with %s.", evaluate.__name__)
 
     return 0
 

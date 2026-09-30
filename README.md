@@ -14,6 +14,7 @@
 - [Fusion Strategies](#fusion-strategies)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Evaluation](#evaluation)
 - [Results](#results)
 - [Contributing](#contributing)
 - [License](#license)
@@ -93,7 +94,7 @@ Files follow one of two naming patterns:
 | `N0XX` | Volunteer ID (e.g., N001 – N010) |
 | `MMG\|IMU` | Sensor modality |
 | `<class>` | One of the 7 activity class labels |
-| `<transition_descriptor>` | One of up to 4 descriptors indicating position relative to a transition point |
+| `<transition_descriptor>` | One of five markers (`100m`, `50m`, `0`, `50`, `100`) indicating position relative to a transition point |
 
 > ⚠️ **Important Labeling Rule:** Files containing data captured *just before* a transition
 > point are labeled as the **class after the transition** — not the class currently being
@@ -117,25 +118,25 @@ following fields:
 ---
 
 ## 🗂️ Project Structure
-HAR_Project/ │ ├── data/ │ ├── raw/ │ │ ├── MMG/
-│ │ └── IMU/
-│ ├── processed/
-│ │ ├── MMG/ │ │ ├── IMU/ │ │ └── fused/ │ └── splits/
-│ ├── subject_dependent/ │ └── LOSO/ │ ├── configs/
-│ ├── models/ │ ├── training/ │ └── experiments/ │ ├── mmg_only/ │ ├── imu_only/ │ └── fused/ │ ├── early/ │ └── late/ │ ├── src/ │ ├── data/
-│ ├── models/
-│ │ └── fusion/
-│ ├── training/
-│ ├── evaluation/
-│ ├── experiments/
-│ │ └── comparison/
-│ └── utils/
-│ ├── notebooks/
-├── results/ │ ├── checkpoints/ │ ├── logs/ │ ├── metrics/ │ └── figures/ │ ├── tests/
-├── scripts/
-├── requirements.txt ├── setup.py └── README.md
 
-> See the full annotated folder structure in [`STRUCTURE.md`](STRUCTURE.md)
+```
+MMGNet-HIR/
+├── main.py                  # Entry point: build the split, then --train and/or --test
+├── verify_selection.py      # Sanity checks for sample selection and tensors
+├── requirements.txt
+├── data/
+│   ├── transitions/         # Files with a transition marker (100m, 50m, 0, 50, 100)
+│   └── just_states/         # Steady-state files without a marker
+├── scripts/                 # Registry, split, memory planning, training lifecycle, run selection
+├── models/                  # IMU/MMG CNNs and CNN/GRU fusion models (single-window and windowed)
+├── train/                   # Training entry points, one per model family
+├── evaluation/              # Test-set evaluation entry points and best-trial report
+├── checkpoints/             # Descriptively named checkpoint copies
+├── results/
+│   ├── training/<run-id>/   # One directory per training run (see below)
+│   └── evaluation/          # Evaluation plots, metrics and reports
+└── tests/
+```
 
 ---
 
@@ -236,7 +237,7 @@ forms. Every entry point now follows the same experiment lifecycle:
 6. Save a uniquely named checkpoint and a reproducibility manifest.
 
 The test tensors are deliberately not evaluated by these training functions.
-They remain sealed for the dedicated model-evaluation workflow.
+They remain sealed for the dedicated [evaluation workflow](#evaluation).
 
 Each model run is stored under `results/training/<run-id>/` and contains:
 
@@ -255,6 +256,12 @@ separate `cnn_resume_run_id` and `gru_resume_run_id` values because the CNN and
 GRU searches are independent studies. Existing fixed checkpoint arguments are
 retained as compatibility aliases; the uniquely named artifact checkpoint is
 the authoritative model recorded in the manifest.
+
+Fusion entry points do not take backbone paths. They freeze the latest IMU and
+MMG runs of the same input mode that were trained on the same split, selected
+and verified as described in [Model selection](#model-selection). If either
+backbone is missing, training stops and prints the command that trains it.
+Train the standalone models first.
 
 ---
 
@@ -290,7 +297,8 @@ cd HAR-MultiModal-DL
 
 ```powershell
 python -m venv venv
-.\venv\Scripts\Activate.ps1
+.\venv\Scripts\Activate.ps1   # Windows
+source venv/bin/activate      # Linux/macOS
 ```
 
 **3. Install PyTorch and project dependencies**
@@ -340,3 +348,101 @@ The selected device is used consistently for Optuna trials, final refitting,
 class weights, input batches, and fusion checkpoint loading. Each run records
 the requested and resolved device, GPU name, CUDA version, and cuDNN version in
 its `manifest.json`. An explicit CUDA request never silently falls back to CPU.
+
+---
+
+## ▶️ Usage
+
+Run all commands from the repository root. `main.py` builds the train/test
+split once from its arguments, then trains (`--train`), evaluates (`--test`),
+or does both in that order.
+
+```bash
+# Train windowed IMU and MMG CNNs on one volunteer
+python main.py --train --same-volunteer-id 13
+
+# Train windowed fusion models on the same volunteer (needs the runs above)
+python main.py --train --same-volunteer-id 13 --model-target fusion
+
+# Train on 5 volunteers and hold out 5 unseen volunteers for testing
+python main.py --train --train-volunteer-count 5 --test-volunteer-count 5
+
+# Evaluate the latest matching models on the test split
+python main.py --test --same-volunteer-id 13
+```
+
+| Argument | Default | Purpose |
+|----------|---------|---------|
+| `--train`, `--test` | — | Train and/or evaluate; at least one is required |
+| `--same-volunteer-id` | — | Train and test on one volunteer (e.g. `13` or `N013`) |
+| `--train-volunteer-count`, `--test-volunteer-count` | `5`, `5` | Volunteer-level split; cannot be combined with `--same-volunteer-id` |
+| `--input-mode` | `windowed` | `windowed` keeps the 4 windows in each sample; `single_window` makes every window a sample |
+| `--model-target` | `standalone` | `standalone` IMU and MMG CNNs, or `fusion` CNN and GRU fusion models |
+| `--seed`, `--test-fraction`, `--just-states-ratio`, `--total-budget-gb` | `42`, `0.10`, `1.05`, `10.0` | Split settings; `--test` only finds models trained with the same values |
+| `--batch-size` | `32` | Initial data-loader batch size |
+
+---
+
+## 📊 Evaluation
+
+`python main.py --test` evaluates on the test split that `main.py` has just
+built from its arguments. The evaluation module is chosen from `--input-mode`
+and `--model-target`, and always compares two models:
+
+| `--input-mode` | `--model-target` | Module in `evaluation/` | Models compared |
+|----------------|------------------|-------------------------|-----------------|
+| `windowed` | `standalone` | `standalone_windows_eval.py` | IMU vs MMG windowed CNN |
+| `single_window` | `standalone` | `standalone_single_window_eval.py` | IMU vs MMG CNN |
+| `windowed` | `fusion` | `fusion_windows_eval.py` | FusionCNN vs FusionGRU |
+| `single_window` | `fusion` | `fusion_single_window_eval.py` | FusionCNN vs FusionGRU |
+
+The same modules handle a single volunteer (`--same-volunteer-id`) and unseen
+volunteers (`--train-volunteer-count` / `--test-volunteer-count`). In
+`single_window` mode each of the 4 windows is scored as a separate test row.
+
+### Model selection
+
+For each model, `scripts/run_selection.py`:
+
+1. Reads `results/training/*/manifest.json` and keeps completed runs of that
+   model and input mode whose split settings (volunteer or volunteer counts,
+   seed, test fraction, just-states ratio, memory budget) match the current
+   arguments. Volunteer IDs are normalised, so `4`, `04` and `N004` match.
+2. Takes the latest run by completion time.
+3. Verifies the checkpoint's SHA-256 and recomputes the training-metadata
+   fingerprint. A mismatch means the model may have seen the test samples, so
+   evaluation stops with an error.
+
+Both models in a comparison must be available. If either is missing,
+evaluation stops and prints the `python main.py --train ...` command that
+trains it. Fusion evaluation also re-verifies the frozen IMU and MMG backbones.
+
+> The fingerprint is computed with pandas, so evaluate in the same environment
+> (package versions) that was used for training.
+
+### Outputs
+
+Each evaluation writes to
+`results/evaluation/<model-target>__<input-mode>__<data-tag>__<timestamp>/`:
+
+| File | Content |
+|------|---------|
+| `confusion_matrix_<model>.png` | One figure per model: 7×7 matrix over all test samples, rows normalised to % of the true class |
+| `transition_accuracy.png` | Both models' accuracy per transition marker (`100m`, `50m`, `0`, `50`, `100`) as grouped bars with sample counts; `just_states` samples are excluded |
+| `metrics.json` | Run IDs, checkpoint hashes, accuracy, macro-F1, balanced accuracy, confusion matrices and per-marker accuracy |
+| `predictions.csv` | Test metadata with the true label and each model's prediction |
+
+### Best-trial report
+
+```bash
+python evaluation/summarise_best_trials.py \
+    [--artifact-root results/training] [--output-dir results/evaluation/best_trials]
+```
+
+Collects `best_trial.json` from the latest single-volunteer run per model and
+volunteer. For each model it reports n, mean, sample standard deviation, min,
+max and range of the objective, validation accuracy, validation macro-F1, best
+epoch, best trial number and every numeric hyperparameter; categorical
+hyperparameters are reported as value counts. It writes
+`best_trials_runs.csv` (one row per run) and `best_trials_summary.json`.
+These are Optuna validation metrics, not test-set results.

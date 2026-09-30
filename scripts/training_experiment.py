@@ -314,7 +314,7 @@ def _close_study_storage(study: optuna.Study) -> None:
         engine.dispose()
 
 
-def _sha256(path: Path) -> str:
+def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -324,7 +324,7 @@ def _sha256(path: Path) -> str:
 
 def _parent_checkpoint_record(path: Path, artifact_root: Path) -> dict[str, Any]:
     """Describe a fusion parent and link it to its run manifest when available."""
-    checkpoint_hash = _sha256(path)
+    checkpoint_hash = file_sha256(path)
     record: dict[str, Any] = {"path": str(path), "sha256": checkpoint_hash}
     candidates = [path.parent / "manifest.json"]
     if artifact_root.is_dir():
@@ -351,7 +351,7 @@ def _parent_checkpoint_record(path: Path, artifact_root: Path) -> dict[str, Any]
     return record
 
 
-def _metadata_fingerprint(metadata: pd.DataFrame) -> str:
+def metadata_fingerprint(metadata: pd.DataFrame) -> str:
     normalized = metadata.reset_index(drop=True).astype(str)
     return hashlib.sha256(normalized.to_csv(index=False).encode("utf-8")).hexdigest()
 
@@ -660,7 +660,7 @@ def run_training_experiment(
             "development_rows": len(prepared.y_train),
             "development_volunteers": _volunteers(prepared.train_metadata),
             "class_distribution": _class_distribution(prepared.y_train, num_classes),
-            "metadata_fingerprint_sha256": _metadata_fingerprint(prepared.train_metadata),
+            "metadata_fingerprint_sha256": metadata_fingerprint(prepared.train_metadata),
             "validation_protocol": "single grouped stratified holdout",
             "validation_fraction": run_config.val_fraction,
             "group_columns": GROUP_COLUMNS,
@@ -700,7 +700,7 @@ def run_training_experiment(
         },
         "artifacts": {
             "checkpoint": artifacts.checkpoint.name,
-            "checkpoint_sha256": _sha256(artifacts.checkpoint),
+            "checkpoint_sha256": file_sha256(artifacts.checkpoint),
             "checkpoint_aliases": aliases,
             "checkpoint_alias_saved_at_utc": saved_at.isoformat(),
             "study_journal": artifacts.study_journal.name,

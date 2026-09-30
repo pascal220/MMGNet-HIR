@@ -7,12 +7,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from data_loader import PreparedData
 from fusion_cnn_window_model import FusionCNNWindowTrainer, FusionCNNWindowTuner
 from fusion_gru_window_model import FusionGRUWindowTrainer, FusionGRUWindowTuner
+from run_selection import select_trained_run
 from split_utils import validate_prepared_data
 from training_experiment import TrainingRunConfig, run_training_experiment
 
 NUM_CLASSES = 7
-INTENT_CNN_PATH = "checkpoints/best_window_imu_cnn.pt"
-GESTURE_CNN_PATH = "checkpoints/best_window_mmg_cnn.pt"
 FUSION_CNN_PATH = "checkpoints/best_window_fusion_cnn.pt"
 FUSION_GRU_PATH = "checkpoints/best_window_fusion_gru.pt"
 
@@ -20,8 +19,6 @@ FUSION_GRU_PATH = "checkpoints/best_window_fusion_gru.pt"
 def train_and_evaluate_fusion_windows(
     prepared: PreparedData,
     batch_size: int | None = None,
-    intent_cnn_path: str = INTENT_CNN_PATH,
-    gesture_cnn_path: str = GESTURE_CNN_PATH,
     fusion_cnn_checkpoint_path: str | None = FUSION_CNN_PATH,
     fusion_gru_checkpoint_path: str | None = FUSION_GRU_PATH,
     *,
@@ -36,10 +33,13 @@ def train_and_evaluate_fusion_windows(
 ):
     """Tune and refit windowed FusionCNN and FusionGRU models.
 
-    The standalone backbones remain frozen. Test tensors are deliberately not
-    read; this function returns validation-selection metadata and artifact paths.
+    The frozen backbones are the latest IMU and MMG runs trained on this exact
+    split. Test tensors are deliberately not read; this function returns
+    validation-selection metadata and artifact paths.
     """
     validate_prepared_data(prepared, "windowed", "fusion")
+    intent_cnn_path = str(select_trained_run(prepared, "imu_cnn_windowed", artifact_root).checkpoint)
+    gesture_cnn_path = str(select_trained_run(prepared, "mmg_cnn_windowed", artifact_root).checkpoint)
     common = {
         "prepared": prepared,
         "input_tensors": (prepared.X_imu_train, prepared.X_cwt_train),
