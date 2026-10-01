@@ -1,0 +1,323 @@
+{
+  "artifacts": {
+    "best_trial_json": "best_trial.json",
+    "checkpoint": "imu_cnn_windowed__windowed__same-N016__20261001T144705Z.pt",
+    "checkpoint_alias_saved_at_utc": "2026-10-01T14:55:44.347702+00:00",
+    "checkpoint_aliases": [
+      "checkpoints/best_window_imu_cnn_2026-10-01_VN016_A94.69.pt"
+    ],
+    "checkpoint_sha256": "f12bf9e90ff5e773abc130324fcb3de1bfc0be3bfd4b58ce3eeb861cac9ad59c",
+    "plots": {
+      "generated": [
+        "plots/optimization_history.html",
+        "plots/parameter_importances.html",
+        "plots/parallel_coordinate.html",
+        "plots/slice.html"
+      ],
+      "skipped": {}
+    },
+    "study_journal": "study.journal",
+    "trials_csv": "trials.csv"
+  },
+  "completed_at_utc": "2026-10-01T14:55:44.348723+00:00",
+  "data": {
+    "class_distribution": {
+      "0": 410,
+      "1": 297,
+      "2": 287,
+      "3": 251,
+      "4": 268,
+      "5": 10,
+      "6": 41
+    },
+    "development_rows": 1564,
+    "development_volunteers": [
+      "N016"
+    ],
+    "experiment_config": {
+      "batch_size": 32,
+      "just_states_ratio": 1.05,
+      "same_volunteer_id": "N016",
+      "seed": 42,
+      "test_fraction": 0.1,
+      "test_volunteer_count": 5,
+      "total_budget_gb": 10.0,
+      "train_volunteer_count": 5
+    },
+    "group_columns": [
+      "imu_source_file",
+      "source_sample_index"
+    ],
+    "metadata_fingerprint_sha256": "1d9f026be4d91c8802b82d237e122aab0c8466fe58fa28fda3b84d21edf2a6e4",
+    "search_train_fingerprint_sha256": "cb2791dbf76f7dda61b1b4856f6a8adeb65112f246ad8a051579f9d9e4754382",
+    "search_train_rows": 1407,
+    "test_set_accessed": false,
+    "validation_fingerprint_sha256": "8e4560bd42fd32f4205e8830dcfdd12c86e48b1f683884869035f80d7e42457e",
+    "validation_fraction": 0.1,
+    "validation_protocol": "single grouped stratified holdout",
+    "validation_rows": 157
+  },
+  "duration_seconds": 518.7759609659988,
+  "environment": {
+    "compute_device": {
+      "cuda_available": true,
+      "cuda_device_count": 1,
+      "cuda_version": "13.0",
+      "cudnn_version": 92000,
+      "device_name": "NVIDIA GeForce RTX 2080",
+      "index": 0,
+      "requested": "auto",
+      "resolved": "cuda",
+      "torch": "2.13.0+cu130",
+      "type": "cuda"
+    },
+    "cuda_available": true,
+    "cuda_version": "13.0",
+    "git": {
+      "commit": "b2a066dc15f723234d26d4c881cba085424bfde6",
+      "dirty": false
+    },
+    "numpy": "2.5.2",
+    "optuna": "4.9.0",
+    "pandas": "3.0.5",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "plotly": "7.0.0",
+    "python": "3.13.9 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 19:16:10) [GCC 11.2.0]",
+    "scikit_learn": "1.9.0",
+    "seed": 42,
+    "torch": "2.13.0+cu130"
+  },
+  "final_refit": {
+    "actual_epochs": 50,
+    "class_weights": [
+      0.5449477351916376,
+      0.7522847522847523,
+      0.7784967645594824,
+      0.8901536710301651,
+      0.8336886993603412,
+      22.34285714285714,
+      5.449477351916376
+    ],
+    "early_stopping": {
+      "best_epoch": 48,
+      "best_value": 0.10706373248868586,
+      "enabled": true,
+      "epochs_without_improvement": 2,
+      "min_delta": 0.0001,
+      "monitor": "train_loss",
+      "patience": 10,
+      "restored_best_weights": true,
+      "stopped_epoch": null
+    },
+    "epochs": 50,
+    "final_training_accuracy": 0.94693094629156,
+    "history_path": "training_history.json",
+    "policy": "all non-test development data for up to configured final epoch count with train-loss early stopping",
+    "training_params": {
+      "batch_size": 64,
+      "beta1": 0.919748703434448,
+      "beta2": 0.9653230078962546,
+      "class_weights": [
+        0.5449477351916376,
+        0.7522847522847523,
+        0.7784967645594824,
+        0.8901536710301651,
+        0.8336886993603412,
+        22.34285714285714,
+        5.449477351916376
+      ],
+      "device": "cuda",
+      "early_stopping_min_delta": 0.0001,
+      "early_stopping_monitor": "train_loss",
+      "early_stopping_patience": 10,
+      "epochs": 50,
+      "lr": 0.0019346476637440951,
+      "lr_decay": 0.14023847077626692,
+      "lr_step_size": 33,
+      "optimizer": "Adam",
+      "restore_best_weights": true,
+      "weight_decay": 4.918841269992179e-05
+    }
+  },
+  "model": {
+    "class": "IntentCNNWindow",
+    "config": {
+      "block_filters": [
+        64,
+        8
+      ],
+      "first_conv_filters": 128,
+      "first_conv_kernel_width": 5,
+      "in_channels": 6,
+      "kernel_pairs": [
+        [
+          3,
+          7
+        ],
+        [
+          3,
+          5
+        ]
+      ],
+      "num_classes": 7
+    },
+    "input_mode": "windowed",
+    "input_shapes": [
+      [
+        6,
+        125,
+        4
+      ]
+    ],
+    "key": "imu_cnn_windowed",
+    "label_mapping": {
+      "0": "sit",
+      "1": "stand",
+      "2": "walking",
+      "3": "sit_to_stand",
+      "4": "stand_to_sit",
+      "5": "stairs_up",
+      "6": "stairs_down"
+    },
+    "model_target": "standalone",
+    "num_classes": 7,
+    "parent_checkpoints": [],
+    "total_parameters": 85287,
+    "trainable_parameters": 85287
+  },
+  "optimization": {
+    "completed_trials_total": 100,
+    "direction": "maximize",
+    "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+    "pruner": "MedianPruner(n_startup_trials=5,n_warmup_steps=10,interval_steps=1)",
+    "raw_best_params": {
+      "adam_beta1": 0.919748703434448,
+      "adam_beta2": 0.9653230078962546,
+      "adam_lr": 0.0019346476637440951,
+      "adam_wd": 4.918841269992179e-05,
+      "batch_size": 64,
+      "block_0_filters": 64,
+      "block_0_kernel_pair": "(3, 7)",
+      "block_1_filters": 8,
+      "block_1_kernel_pair": "(3, 5)",
+      "first_conv_filters": 128,
+      "first_conv_kernel_width": 5,
+      "lr_decay": 0.14023847077626692,
+      "lr_step_size": 33,
+      "n_blocks": 2,
+      "optimizer": "Adam"
+    },
+    "requested_additional_trials": 100,
+    "sampler": "TPESampler(seed=42)",
+    "search_class_weights": [
+      0.5447154471544715,
+      0.7528089887640449,
+      0.7790697674418604,
+      0.8893805309734514,
+      0.8340248962655601,
+      22.333333333333332,
+      5.4324324324324325
+    ],
+    "search_space": {
+      "adam_beta1": [
+        0.85,
+        0.99
+      ],
+      "adam_beta2": [
+        0.9,
+        0.9999
+      ],
+      "adam_lr": [
+        0.0001,
+        0.01
+      ],
+      "adam_wd": [
+        1e-06,
+        0.01
+      ],
+      "batch_size": [
+        64,
+        128,
+        200,
+        256
+      ],
+      "epochs": 50,
+      "filters": [
+        8,
+        16,
+        32,
+        64
+      ],
+      "first_conv_filters": [
+        16,
+        32,
+        64,
+        128
+      ],
+      "first_conv_kernel_width": [
+        3,
+        5,
+        7
+      ],
+      "kernel_pairs": [
+        [
+          3,
+          5
+        ],
+        [
+          3,
+          7
+        ],
+        [
+          5,
+          7
+        ]
+      ],
+      "lr_decay": [
+        0.05,
+        0.5
+      ],
+      "lr_step_size": [
+        10,
+        40
+      ],
+      "n_blocks": [
+        1,
+        3
+      ],
+      "sgd_decay": [
+        0.05,
+        0.5
+      ],
+      "sgd_lr": [
+        0.0001,
+        0.1
+      ],
+      "sgd_momentum": [
+        0.7,
+        0.99
+      ],
+      "sgd_step": [
+        10,
+        40
+      ],
+      "sgd_wd": [
+        1e-06,
+        0.01
+      ]
+    },
+    "selection": {
+      "best_epoch": 44,
+      "best_trial_number": 15,
+      "objective_value": 0.8286303116014458,
+      "validation_accuracy": 0.8853503184713376,
+      "validation_macro_f1": 0.7719103047315541
+    },
+    "study_name": "imu_cnn_windowed__windowed__same-N016__20261001T144705Z",
+    "timeout_seconds": null
+  },
+  "run_id": "imu_cnn_windowed__windowed__same-N016__20261001T144705Z",
+  "schema_version": 1,
+  "started_at_utc": "2026-10-01T14:47:05.572765+00:00",
+  "status": "completed"
+}
