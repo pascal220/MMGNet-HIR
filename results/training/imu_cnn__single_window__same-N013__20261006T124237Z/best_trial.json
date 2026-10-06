@@ -1,0 +1,27 @@
+{
+  "best_epoch": 36,
+  "best_params": {
+    "adam_beta1": 0.8958993577919643,
+    "adam_beta2": 0.9292812943968045,
+    "adam_lr": 0.0018319495924101225,
+    "adam_wd": 4.688913885369496e-06,
+    "batch_size": 128,
+    "block_0_filters": 16,
+    "block_0_kernel_pair": "(3, 5)",
+    "block_1_filters": 64,
+    "block_1_kernel_pair": "(3, 7)",
+    "block_2_filters": 64,
+    "block_2_kernel_pair": "(5, 7)",
+    "lr_decay": 0.3388202042515695,
+    "lr_step_size": 28,
+    "n_blocks": 3,
+    "optimizer": "Adam"
+  },
+  "best_trial_number": 94,
+  "model_key": "imu_cnn",
+  "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+  "objective_value": 0.9486066041708417,
+  "study_name": "imu_cnn__single_window__same-N013__20261006T124237Z",
+  "validation_accuracy": 0.9508928571428571,
+  "validation_macro_f1": 0.9463203511988264
+}
