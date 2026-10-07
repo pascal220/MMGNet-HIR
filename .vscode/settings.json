@@ -2,6 +2,7 @@
     "python.analysis.extraPaths": [
         "./scripts",
         "./models",
-        "./train"
+        "./train",
+        "./evaluation"
     ]
 }
