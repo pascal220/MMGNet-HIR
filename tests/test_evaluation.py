@@ -26,14 +26,23 @@ from training_experiment import file_sha256, metadata_fingerprint
 TRAIN_METADATA = pd.DataFrame({"volunteer_id": ["N004", "N004"], "source_sample_index": [0, 1]})
 
 
-def _prepared(volunteer: str | None = "4", seed: int = 42) -> SimpleNamespace:
+def _prepared(
+    volunteer: str | None = "4",
+    seed: int = 42,
+    *,
+    input_mode: str = "windowed",
+    train_volunteer_count: int = 5,
+    test_volunteer_count: int = 5,
+) -> SimpleNamespace:
     config = ExperimentConfig(
-        same_volunteer_id=volunteer, train_volunteer_count=5, test_volunteer_count=5,
+        same_volunteer_id=volunteer,
+        train_volunteer_count=train_volunteer_count,
+        test_volunteer_count=test_volunteer_count,
         total_budget_gb=10.0, seed=seed, test_fraction=0.1, just_states_ratio=1.05,
     )
     return SimpleNamespace(
         experiment=SimpleNamespace(config=config),
-        input_mode="windowed",
+        input_mode=input_mode,
         train_metadata=TRAIN_METADATA,
     )
 
@@ -48,6 +57,10 @@ def _write_run(
     completed: str = "2026-09-29T00:00:00+00:00",
     fingerprint: str | None = None,
     best_params: dict | None = None,
+    input_mode: str = "windowed",
+    train_volunteer_count: int = 5,
+    test_volunteer_count: int = 5,
+    total_budget_gb: float = 10.0,
 ) -> Path:
     run_dir = root / run_id
     run_dir.mkdir(parents=True)
@@ -57,12 +70,13 @@ def _write_run(
         "status": "completed",
         "run_id": run_id,
         "completed_at_utc": completed,
-        "model": {"key": model_key, "input_mode": "windowed", "parent_checkpoints": []},
+        "model": {"key": model_key, "input_mode": input_mode, "parent_checkpoints": []},
         "data": {
             "experiment_config": {
                 "same_volunteer_id": volunteer, "seed": seed, "test_fraction": 0.1,
-                "just_states_ratio": 1.05, "total_budget_gb": 10.0,
-                "train_volunteer_count": 5, "test_volunteer_count": 5, "batch_size": 32,
+                "just_states_ratio": 1.05, "total_budget_gb": total_budget_gb,
+                "train_volunteer_count": train_volunteer_count,
+                "test_volunteer_count": test_volunteer_count, "batch_size": 32,
             },
             "metadata_fingerprint_sha256": fingerprint or metadata_fingerprint(TRAIN_METADATA),
         },
@@ -96,6 +110,13 @@ class RunSelectionTests(unittest.TestCase):
 
         self.assertEqual(run.run_id, "new")
 
+    def test_run_is_selected_regardless_of_training_memory_budget(self) -> None:
+        _write_run(self.root, "other_budget", total_budget_gb=24.0)
+
+        run = select_trained_run(_prepared("4"), "imu_cnn_windowed", self.root)
+
+        self.assertEqual(run.run_id, "other_budget")
+
     def test_missing_model_reports_near_misses_and_train_command(self) -> None:
         _write_run(self.root, "seed7", seed=7)
 
@@ -115,6 +136,38 @@ class RunSelectionTests(unittest.TestCase):
 
         self.assertNotIn("single", str(raised.exception))
         self.assertIn("--train-volunteer-count 5 --test-volunteer-count 5", str(raised.exception))
+
+    def test_windowed_multi_volunteer_selection_requires_folder_marker(self) -> None:
+        _write_run(
+            self.root, "legacy_windowed_split", volunteer=None,
+            completed="2026-09-30T00:00:00+00:00",
+        )
+        expected = (
+            "imu_cnn_windowed__windowed__separate-v5__20261001T000000Z"
+        )
+        _write_run(self.root, expected, volunteer=None)
+
+        run = select_trained_run(_prepared(None), "imu_cnn_windowed", self.root)
+
+        self.assertEqual(run.run_id, expected)
+
+    def test_single_window_multi_volunteer_run_is_selected_without_windowed_marker(self) -> None:
+        run_id = "imu_cnn__single_window__separate-v2__20261001T000000Z"
+        _write_run(
+            self.root, run_id, model_key="imu_cnn", volunteer=None,
+            input_mode="single_window", train_volunteer_count=2, test_volunteer_count=8,
+        )
+
+        run = select_trained_run(
+            _prepared(
+                None, input_mode="single_window",
+                train_volunteer_count=2, test_volunteer_count=8,
+            ),
+            "imu_cnn",
+            self.root,
+        )
+
+        self.assertEqual(run.run_id, run_id)
 
     def test_fingerprint_mismatch_stops_with_error(self) -> None:
         _write_run(self.root, "leaky", fingerprint="0" * 64)

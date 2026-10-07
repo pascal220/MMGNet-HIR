@@ -22,14 +22,15 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ARTIFACT_ROOT = "results/training"
 
-# Experiment settings that change which samples land in train and test.
+# Experiment settings that change which samples land in train and test. The memory
+# budget is deliberately excluded: models are matched regardless of the budget they
+# were trained with, and the metadata fingerprint check still guards the split.
 SPLIT_SETTINGS: dict[str, tuple[str, ...]] = {
     "same_volunteer": (
-        "same_volunteer_id", "seed", "test_fraction", "just_states_ratio", "total_budget_gb",
+        "same_volunteer_id", "seed", "test_fraction", "just_states_ratio",
     ),
     "separate_volunteers": (
         "train_volunteer_count", "test_volunteer_count", "seed", "just_states_ratio",
-        "total_budget_gb",
     ),
 }
 _DATA_IDENTITY = {"setup", "same_volunteer_id", "train_volunteer_count", "test_volunteer_count"}

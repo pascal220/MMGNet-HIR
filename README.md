@@ -369,6 +369,10 @@ python main.py --train --train-volunteer-count 5 --test-volunteer-count 5
 
 # Evaluate the latest matching models on the test split
 python main.py --test --same-volunteer-id 13
+
+# Evaluate single-window models trained on a 2/8 volunteer split
+python main.py --test --input-mode single_window \
+    --train-volunteer-count 2 --test-volunteer-count 8
 ```
 
 | Argument | Default | Purpose |
@@ -378,7 +382,7 @@ python main.py --test --same-volunteer-id 13
 | `--train-volunteer-count`, `--test-volunteer-count` | `5`, `5` | Volunteer-level split; cannot be combined with `--same-volunteer-id` |
 | `--input-mode` | `windowed` | `windowed` keeps the 4 windows in each sample; `single_window` makes every window a sample |
 | `--model-target` | `standalone` | `standalone` IMU and MMG CNNs, or `fusion` CNN and GRU fusion models |
-| `--seed`, `--test-fraction`, `--just-states-ratio`, `--total-budget-gb` | `42`, `0.10`, `1.05`, `10.0` | Split settings; `--test` only finds models trained with the same values |
+| `--seed`, `--test-fraction`, `--just-states-ratio`, `--total-budget-gb` | `42`, `0.10`, `1.05`, `10.0` | Split settings; `--test` only finds models trained with the same seed, test fraction and just-states ratio. The memory budget is ignored when matching |
 | `--batch-size` | `32` | Initial data-loader batch size |
 
 ---
@@ -406,8 +410,11 @@ For each model, `scripts/run_selection.py`:
 
 1. Reads `results/training/*/manifest.json` and keeps completed runs of that
    model and input mode whose split settings (volunteer or volunteer counts,
-   seed, test fraction, just-states ratio, memory budget) match the current
+   seed, test fraction, just-states ratio; the memory budget is ignored) match the current
    arguments. Volunteer IDs are normalised, so `4`, `04` and `N004` match.
+   For multi-volunteer `windowed` evaluation, the run folder name must also
+   contain `windowed__windowed`; `single_window` multi-volunteer runs are
+   selected by their manifest mode and split settings.
 2. Takes the latest run by completion time.
 3. Verifies the checkpoint's SHA-256 and recomputes the training-metadata
    fingerprint. A mismatch means the model may have seen the test samples, so
