@@ -1,25 +1,25 @@
 {
   "artifacts": {
     "best_trial_json": "best_trial.json",
-    "checkpoint": "mmg_cnn_windowed__windowed__same-N004__20260926T145552Z.pt",
-    "checkpoint_alias_saved_at_utc": "2026-09-27T05:22:04.646065+00:00",
+    "checkpoint": "mmg_cnn_windowed__windowed__same-N004__20261008T075935Z.pt",
+    "checkpoint_alias_saved_at_utc": "2026-10-08T09:46:06.101893+00:00",
     "checkpoint_aliases": [
-      "checkpoints\\best_window_mmg_cnn_2026-09-27_VN004_A100.00.pt"
+      "checkpoints/best_window_mmg_cnn_2026-10-08_VN004_A95.91.pt"
     ],
-    "checkpoint_sha256": "36627a067ad2c0d18a5fbc416e74a7d78c242b3ed743e14478d0ef4868249c4c",
+    "checkpoint_sha256": "509aaf8070c081a1baa357d7b97ab71a9ca0dbf3614ec50af201df0241bfd782",
     "plots": {
       "generated": [
-        "plots\\optimization_history.html",
-        "plots\\parameter_importances.html",
-        "plots\\parallel_coordinate.html",
-        "plots\\slice.html"
+        "plots/optimization_history.html",
+        "plots/parameter_importances.html",
+        "plots/parallel_coordinate.html",
+        "plots/slice.html"
       ],
       "skipped": {}
     },
     "study_journal": "study.journal",
     "trials_csv": "trials.csv"
   },
-  "completed_at_utc": "2026-09-27T05:22:04.659151+00:00",
+  "completed_at_utc": "2026-10-08T09:46:06.104538+00:00",
   "data": {
     "class_distribution": {
       "0": 246,
@@ -48,47 +48,47 @@
       "imu_source_file",
       "source_sample_index"
     ],
-    "metadata_fingerprint_sha256": "f901b8e6cfd73b3ab33ccc9c10862697c11a3e44338b93cc19eaa6b481956836",
-    "search_train_fingerprint_sha256": "138d143af101d93a87f3a12625e8af0b1bb405b1cac1289403ddcacf65d44b82",
+    "metadata_fingerprint_sha256": "dedb61294366fdc859fa8385751ae04121183d0f5f686808c054044c4e65dc54",
+    "search_train_fingerprint_sha256": "9479553cb36edf028d9065689c95846882aef589ae5dde4e0f05ecf9605084c1",
     "search_train_rows": 1519,
     "test_set_accessed": false,
-    "validation_fingerprint_sha256": "77ac19f9ef6557b461ca4a7488b2f3d6f34c8d1488941bdde917f20e56a11e9f",
+    "validation_fingerprint_sha256": "12243f8fd30b7875c5668f218f30d26fe6a3868cad3db5f55fe7a29887ad581f",
     "validation_fraction": 0.1,
     "validation_protocol": "single grouped stratified holdout",
     "validation_rows": 169
   },
-  "duration_seconds": 51970.73474279995,
+  "duration_seconds": 6390.772101134,
   "environment": {
     "compute_device": {
       "cuda_available": true,
       "cuda_device_count": 1,
-      "cuda_version": "12.6",
-      "cudnn_version": 91002,
-      "device_name": "NVIDIA T1000 8GB",
+      "cuda_version": "13.0",
+      "cudnn_version": 92000,
+      "device_name": "NVIDIA GeForce RTX 2080",
       "index": 0,
       "requested": "auto",
       "resolved": "cuda",
-      "torch": "2.13.0+cu126",
+      "torch": "2.13.0+cu130",
       "type": "cuda"
     },
     "cuda_available": true,
-    "cuda_version": "12.6",
+    "cuda_version": "13.0",
     "git": {
-      "commit": "d08e3ab543314f8ccd7f6770375f385009778ba6",
+      "commit": "23f7869feaeac7e120a5da8c0b3cef7346907a44",
       "dirty": false
     },
-    "numpy": "2.4.6",
-    "optuna": "5.0.0",
+    "numpy": "2.5.2",
+    "optuna": "4.9.0",
     "pandas": "3.0.5",
-    "platform": "Windows-10-10.0.26100-SP0",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
     "plotly": "7.0.0",
-    "python": "3.11.1 (tags/v3.11.1:a7a450f, Dec  6 2022, 19:58:39) [MSC v.1934 64 bit (AMD64)]",
+    "python": "3.13.9 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 19:16:10) [GCC 11.2.0]",
     "scikit_learn": "1.9.0",
     "seed": 42,
-    "torch": "2.13.0+cu126"
+    "torch": "2.13.0+cu130"
   },
   "final_refit": {
-    "actual_epochs": 100,
+    "actual_epochs": 84,
     "class_weights": [
       0.9802555168408827,
       0.37386489479512736,
@@ -99,24 +99,24 @@
       4.728291316526611
     ],
     "early_stopping": {
-      "best_epoch": 96,
-      "best_value": 0.00982223477620649,
+      "best_epoch": 74,
+      "best_value": 0.07381386165087822,
       "enabled": true,
-      "epochs_without_improvement": 4,
+      "epochs_without_improvement": 10,
       "min_delta": 0.0001,
       "monitor": "train_loss",
       "patience": 10,
       "restored_best_weights": true,
-      "stopped_epoch": null
+      "stopped_epoch": 84
     },
     "epochs": 100,
-    "final_training_accuracy": 1.0,
+    "final_training_accuracy": 0.9591232227488151,
     "history_path": "training_history.json",
     "policy": "all non-test development data for up to configured final epoch count with train-loss early stopping",
     "training_params": {
-      "batch_size": 200,
-      "beta1": 0.8864130859572659,
-      "beta2": 0.9414255544115729,
+      "batch_size": 64,
+      "beta1": 0.9518808794293553,
+      "beta2": 0.9440707197652772,
       "class_weights": [
         0.9802555168408827,
         0.37386489479512736,
@@ -131,13 +131,13 @@
       "early_stopping_monitor": "train_loss",
       "early_stopping_patience": 10,
       "epochs": 100,
-      "lr": 0.001081400288024049,
-      "lr_factor": 0.28023248909892506,
+      "lr": 0.0007846321491596066,
+      "lr_factor": 0.3304429445843002,
       "lr_min": 1e-07,
-      "lr_patience": 8,
+      "lr_patience": 20,
       "optimizer": "Adam",
       "restore_best_weights": true,
-      "weight_decay": 0.0027980210820343875
+      "weight_decay": 1.8439028973851085e-06
     }
   },
   "model": {
@@ -146,22 +146,22 @@
       "block_filters": [
         32,
         64,
-        64
+        32
       ],
       "dropout_rates": [
-        0.014759101866489873,
-        0.021820409945213927,
-        0.037407727292130814
+        0.04369201496984225,
+        0.028113752591944232,
+        0.03288780861204445
       ],
-      "fc_hidden": 512,
+      "fc_hidden": 256,
       "first_conv_filters": 256,
       "first_conv_kernel_freq": 5,
       "first_conv_kernel_time": 5,
       "in_channels": 5,
       "kernel_sizes": [
         7,
-        5,
-        3
+        3,
+        5
       ],
       "num_classes": 7,
       "strides": [
@@ -192,8 +192,8 @@
     "model_target": "standalone",
     "num_classes": 7,
     "parent_checkpoints": [],
-    "total_parameters": 655175,
-    "trainable_parameters": 655175
+    "total_parameters": 610055,
+    "trainable_parameters": 610055
   },
   "optimization": {
     "completed_trials_total": 100,
@@ -201,28 +201,28 @@
     "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
     "pruner": "MedianPruner(n_startup_trials=5,n_warmup_steps=10,interval_steps=1)",
     "raw_best_params": {
-      "adam_beta1": 0.8864130859572659,
-      "adam_beta2": 0.9414255544115729,
-      "adam_lr": 0.001081400288024049,
-      "adam_wd": 0.0027980210820343875,
-      "batch_size": 200,
-      "block_0_dropout": 0.014759101866489873,
+      "adam_beta1": 0.9518808794293553,
+      "adam_beta2": 0.9440707197652772,
+      "adam_lr": 0.0007846321491596066,
+      "adam_wd": 1.8439028973851085e-06,
+      "batch_size": 64,
+      "block_0_dropout": 0.04369201496984225,
       "block_0_filters": 32,
       "block_0_kernel": 7,
       "block_0_stride": 3,
-      "block_1_dropout": 0.021820409945213927,
+      "block_1_dropout": 0.028113752591944232,
       "block_1_filters": 64,
-      "block_1_kernel": 5,
+      "block_1_kernel": 3,
       "block_1_stride": 2,
-      "block_2_dropout": 0.037407727292130814,
-      "block_2_filters": 64,
-      "block_2_kernel": 3,
+      "block_2_dropout": 0.03288780861204445,
+      "block_2_filters": 32,
+      "block_2_kernel": 5,
       "block_2_stride": 2,
-      "fc_hidden": "512",
+      "fc_hidden": "256",
       "first_conv_filters": 256,
       "first_conv_kernel_size": 5,
-      "lr_factor": 0.28023248909892506,
-      "lr_patience": 8,
+      "lr_factor": 0.3304429445843002,
+      "lr_patience": 20,
       "n_blocks": 3,
       "optimizer": "Adam"
     },
@@ -256,12 +256,11 @@
       ],
       "batch_size": [
         64,
-        128,
-        200
+        128
       ],
       "dropout_rates": [
         0.01,
-        0.05
+        0.1
       ],
       "epochs": 50,
       "fc_hidden": [
@@ -361,17 +360,17 @@
       ]
     },
     "selection": {
-      "best_epoch": 44,
-      "best_trial_number": 63,
-      "objective_value": 0.8273335073712529,
-      "validation_accuracy": 0.834319526627219,
-      "validation_macro_f1": 0.8203474881152868
+      "best_epoch": 49,
+      "best_trial_number": 61,
+      "objective_value": 0.7894790958821771,
+      "validation_accuracy": 0.7988165680473372,
+      "validation_macro_f1": 0.7801416237170169
     },
-    "study_name": "mmg_cnn_windowed__windowed__same-N004__20260926T145552Z",
+    "study_name": "mmg_cnn_windowed__windowed__same-N004__20261008T075935Z",
     "timeout_seconds": null
   },
-  "run_id": "mmg_cnn_windowed__windowed__same-N004__20260926T145552Z",
+  "run_id": "mmg_cnn_windowed__windowed__same-N004__20261008T075935Z",
   "schema_version": 1,
-  "started_at_utc": "2026-09-26T14:55:52.814159+00:00",
+  "started_at_utc": "2026-10-08T07:59:35.332443+00:00",
   "status": "completed"
 }
