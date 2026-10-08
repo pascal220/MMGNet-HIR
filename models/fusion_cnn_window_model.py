@@ -27,7 +27,7 @@ from torch.utils.data import DataLoader
 
 from imu_cnn_window_model import IntentCNNWindow
 from mmg_cnn_window_model import LocomotionMMGCNNWindow
-from device_utils import resolve_device
+from device_utils import release_cuda_memory, resolve_device
 from early_stopping import EarlyStopping
 
 # Optuna visualisation
@@ -672,12 +672,11 @@ class FusionCNNWindowTuner:
     """
 
     _SEARCH = dict(
-        # Fusion head architecture
-        n_hidden_layers = (1, 3),
-        hidden_dims     = [64, 128, 256],
-        dropout_rate    = (0.2, 0.7),
+        # Fusion head architecture (one hidden FC layer + output layer)
+        hidden_dim      = [64, 128, 256, 512],
+        dropout_rate    = (0.0, 0.1),
         # Training
-        batch_size      = [32, 64, 128],
+        batch_size      = [64, 128, 200],
         epochs          = 50,
         # SGD
         sgd_lr          = (1e-4, 1e-1),
@@ -733,19 +732,10 @@ class FusionCNNWindowTuner:
         """
 
         # ── 1. Sample fusion head architecture ──────────────────────────────
-        n_hidden = trial.suggest_int(
-            "n_hidden_layers",
-            self.search["n_hidden_layers"][0],
-            self.search["n_hidden_layers"][1],
+        hidden_dim = trial.suggest_categorical(
+            "hidden_dim", self.search["hidden_dim"]
         )
-
-        hidden_dims = []
-        for i in range(n_hidden):
-            dim = trial.suggest_categorical(
-                f"hidden_dim_{i}", self.search["hidden_dims"]
-            )
-            hidden_dims.append(dim)
-
+        hidden_dims = [hidden_dim]
         dropout_rate = trial.suggest_float(
             "dropout_rate",
             self.search["dropout_rate"][0],
@@ -833,6 +823,7 @@ class FusionCNNWindowTuner:
         trainer = FusionCNNWindowTrainer(model, hyperparams)
 
         # ── 5. Train (pruning enabled) ──────────────────────────────────────
+        out_of_memory = False
         try:
             trainer.fit(
                 t_loader,
@@ -843,6 +834,17 @@ class FusionCNNWindowTuner:
             )
         except optuna.exceptions.TrialPruned:
             raise
+        except torch.cuda.OutOfMemoryError:
+            out_of_memory = True
+
+        if out_of_memory:
+            # Skip this configuration instead of aborting the whole study.
+            del trainer, model, t_loader, v_loader
+            release_cuda_memory()
+            trial.set_user_attr("out_of_memory", True)
+            raise optuna.exceptions.TrialPruned(
+                f"CUDA out of memory (batch_size={batch_size})."
+            )
 
         # ── 6. Return combined metric ───────────────────────────────────────
         scores = [
@@ -936,9 +938,8 @@ class FusionCNNWindowTuner:
         if self._best_params is None:
             raise RuntimeError("Call run() before _build_best_model()")
         p         = self._best_params
-        n_hidden  = p["n_hidden_layers"]
 
-        hidden_dims = [p[f"hidden_dim_{i}"] for i in range(n_hidden)]
+        hidden_dims = [p["hidden_dim"]]
         dropout_rate = p["dropout_rate"]
 
         return FusionCNNWindow(

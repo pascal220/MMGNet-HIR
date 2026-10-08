@@ -32,7 +32,7 @@ from torch.utils.data import DataLoader
 
 from imu_cnn_model   import IntentCNN
 from mmg_cnn_model import LocomotionMMGCNN
-from device_utils import resolve_device
+from device_utils import release_cuda_memory, resolve_device
 from early_stopping import EarlyStopping
 
 # Optuna visualisation
@@ -203,6 +203,7 @@ class FusionCNN(nn.Module):
         gesture_cnn_path : path to saved GestureCNN .pt checkpoint
         num_classes      : output classes (default 7)
         fc_hidden        : hidden units in FC layer
+        dropout          : dropout probability after the FC layer
         device           : torch device
         backbone_configs : {"intent": cfg, "gesture": cfg}; used instead of
                            the checkpoint paths (weights then come from a
@@ -217,6 +218,7 @@ class FusionCNN(nn.Module):
         fc_hidden:        int                 = 128,
         device:           torch.device | None = None,
         backbone_configs: dict | None         = None,
+        dropout:          float               = 0.5,
     ):
         super().__init__()
 
@@ -232,7 +234,7 @@ class FusionCNN(nn.Module):
         self.head = nn.Sequential(
             nn.Linear(feat_dim, fc_hidden),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5),
+            nn.Dropout(p=dropout),
             nn.Linear(fc_hidden, num_classes),
         )
 
@@ -243,6 +245,7 @@ class FusionCNN(nn.Module):
             gesture_cnn_path = gesture_cnn_path,
             num_classes      = num_classes,
             fc_hidden        = fc_hidden,
+            dropout          = dropout,
             feature_dim      = feat_dim,
             backbone_configs = self.backbones.backbone_configs,
         )
@@ -257,6 +260,7 @@ class FusionCNN(nn.Module):
         return cls(
             num_classes      = config["num_classes"],
             fc_hidden        = config["fc_hidden"],
+            dropout          = config["dropout"],
             device           = device,
             backbone_configs = config["backbone_configs"],
         )
@@ -560,7 +564,7 @@ class FusionCNNTuner:
     Optuna tuner for FusionCNN.
 
     Searches over:
-        FC hidden size + optimiser (SGD or Adam) + batch size
+        FC hidden size + FC dropout + optimiser (SGD or Adam) + batch size
         + ReduceLROnPlateau factor and patience
 
     Usage:
@@ -571,8 +575,9 @@ class FusionCNNTuner:
     """
 
     _SEARCH = dict(
-        fc_hidden    = [64, 128, 256],
-        batch_size   = [16, 32, 64, 128],
+        fc_hidden    = [64, 128, 256, 512],
+        dropout      = (0.0, 0.1),
+        batch_size   = [64, 128, 200],
         epochs       = 50,
         sgd_lr       = (1e-4, 1e-1),
         sgd_momentum = (0.70, 0.99),
@@ -612,6 +617,7 @@ class FusionCNNTuner:
         fc_hidden  = trial.suggest_categorical(
             "fc_hidden", self.search["fc_hidden"]
         )
+        dropout    = trial.suggest_float("dropout", *self.search["dropout"])
         opt_name   = trial.suggest_categorical("optimizer", ["SGD", "Adam"])
 
         hyperparams: dict[str, Any]
@@ -671,10 +677,12 @@ class FusionCNNTuner:
             gesture_cnn_path = self.gesture_cnn_path,
             num_classes      = self.num_classes,
             fc_hidden        = fc_hidden,
+            dropout          = dropout,
             device           = self.device,
         )
         trainer = FusionCNNTrainer(model, hyperparams)
 
+        out_of_memory = False
         try:
             trainer.fit(
                 t_loader, v_loader,
@@ -682,6 +690,17 @@ class FusionCNNTuner:
             )
         except optuna.exceptions.TrialPruned:
             raise
+        except torch.cuda.OutOfMemoryError:
+            out_of_memory = True
+
+        if out_of_memory:
+            # Skip this configuration instead of aborting the whole study.
+            del trainer, model, t_loader, v_loader
+            release_cuda_memory()
+            trial.set_user_attr("out_of_memory", True)
+            raise optuna.exceptions.TrialPruned(
+                f"CUDA out of memory (batch_size={batch_size})."
+            )
 
         scores = [
             FusionCNNTrainer._combined_metric(acc, f1)
@@ -762,6 +781,7 @@ class FusionCNNTuner:
             gesture_cnn_path = self.gesture_cnn_path,
             num_classes      = self.num_classes,
             fc_hidden        = self._best_params["fc_hidden"],
+            dropout          = self._best_params["dropout"],
             device           = self.device,
         )
 

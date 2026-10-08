@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import re
 from typing import Any
 
@@ -19,6 +20,13 @@ def normalize_device_request(device: str | torch.device | None) -> str:
             "such as 'cuda:0'."
         )
     return requested
+
+
+def release_cuda_memory() -> None:
+    """Free cached GPU memory after a trial that ran out of memory."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def resolve_device(device: str | torch.device | None = "auto") -> torch.device:

@@ -79,7 +79,8 @@ class FusionCheckpointTests(unittest.TestCase):
             lambda a, b: FusionCNN(a, b, 7, 8), FusionCNN, parents, inputs
         )
         self._assert_one_file_roundtrip(
-            lambda a, b: FusionGRU(a, b, 7, 8, 1, 0.0, 8), FusionGRU, parents, inputs
+            lambda a, b: FusionGRU(a, b, 7, gru_hidden=8, fc_hidden=8),
+            FusionGRU, parents, inputs,
         )
 
     def test_windowed_fusion_models_load_from_one_file(self) -> None:

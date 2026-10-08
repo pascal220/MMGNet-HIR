@@ -13,8 +13,8 @@
 #       -> Softmax
 #
 # Both sub-model backbones are frozen.
-# Optuna optimises: GRU hidden size, GRU layers, GRU dropout,
-#                   FC hidden size, optimiser hyperparameters.
+# Optuna optimises: GRU hidden size, FC hidden size, FC dropout,
+#                   optimiser hyperparameters.
 #
 # References:
 #   IntentCNN  : Su et al., IEEE TNSRE 2019         (cnn_model.py)
@@ -36,7 +36,7 @@ from torch.utils.data import DataLoader
 
 from imu_cnn_model   import IntentCNN
 from mmg_cnn_model import LocomotionMMGCNN
-from device_utils import resolve_device
+from device_utils import release_cuda_memory, resolve_device
 from early_stopping import EarlyStopping
 
 # Optuna visualisation
@@ -189,10 +189,9 @@ class FusionGRU(nn.Module):
         intent_cnn_path  : path to saved IntentCNN  .pt checkpoint
         gesture_cnn_path : path to saved GestureCNN .pt checkpoint
         num_classes      : output classes (default 7)
-        gru_hidden       : GRU hidden state size
-        gru_layers       : number of stacked GRU layers
-        gru_dropout      : dropout between GRU layers (only if gru_layers > 1)
+        gru_hidden       : GRU hidden state size (single GRU layer)
         fc_hidden        : hidden units in FC layer after GRU
+        fc_dropout       : dropout probability after the FC layer
         device           : torch device
     """
 
@@ -202,11 +201,10 @@ class FusionGRU(nn.Module):
         gesture_cnn_path: str | None        = None,
         num_classes:      int                 = 7,
         gru_hidden:       int                 = 64,
-        gru_layers:       int                 = 1,
-        gru_dropout:      float               = 0.0,
         fc_hidden:        int                 = 128,
         device:           torch.device | None = None,
         backbone_configs: dict | None         = None,
+        fc_dropout:       float               = 0.5,
     ):
         super().__init__()
 
@@ -224,8 +222,7 @@ class FusionGRU(nn.Module):
         self.gru = nn.GRU(
             input_size  = feat_dim,
             hidden_size = gru_hidden,
-            num_layers  = gru_layers,
-            dropout     = gru_dropout if gru_layers > 1 else 0.0,
+            num_layers  = 1,
             batch_first = True,
         )
 
@@ -233,7 +230,7 @@ class FusionGRU(nn.Module):
         self.head = nn.Sequential(
             nn.Linear(gru_hidden, fc_hidden),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5),
+            nn.Dropout(p=fc_dropout),
             nn.Linear(fc_hidden, num_classes),
         )
 
@@ -244,9 +241,8 @@ class FusionGRU(nn.Module):
             gesture_cnn_path = gesture_cnn_path,
             num_classes      = num_classes,
             gru_hidden       = gru_hidden,
-            gru_layers       = gru_layers,
-            gru_dropout      = gru_dropout,
             fc_hidden        = fc_hidden,
+            fc_dropout       = fc_dropout,
             feature_dim      = feat_dim,
             backbone_configs = self.backbones.backbone_configs,
         )
@@ -261,9 +257,8 @@ class FusionGRU(nn.Module):
         return cls(
             num_classes      = config["num_classes"],
             gru_hidden       = config["gru_hidden"],
-            gru_layers       = config["gru_layers"],
-            gru_dropout      = config["gru_dropout"],
             fc_hidden        = config["fc_hidden"],
+            fc_dropout       = config["fc_dropout"],
             device           = device,
             backbone_configs = config["backbone_configs"],
         )
@@ -574,8 +569,8 @@ class FusionGRUTuner:
     Optuna tuner for FusionGRU.
 
     Searches over:
-        GRU hidden size, GRU layers, GRU dropout,
-        FC hidden size, optimiser (SGD or Adam),
+        GRU hidden size, FC hidden size, FC dropout,
+        optimiser (SGD or Adam),
         batch size, ReduceLROnPlateau factor and patience.
 
     Usage:
@@ -586,11 +581,10 @@ class FusionGRUTuner:
     """
 
     _SEARCH = dict(
-        fc_hidden    = [64, 128, 256],
-        gru_hidden   = [32, 64, 128, 256],
-        gru_layers   = (1, 3),
-        gru_dropout  = (0.0, 0.5),
-        batch_size   = [16, 32, 64, 128],
+        fc_hidden    = [64, 128, 256, 512],
+        gru_hidden   = [64, 128, 256, 512],
+        fc_dropout   = (0.0, 0.1),
+        batch_size   = [64, 128, 200],
         epochs       = 50,
         sgd_lr       = (1e-4, 1e-1),
         sgd_momentum = (0.70, 0.99),
@@ -630,18 +624,11 @@ class FusionGRUTuner:
         gru_hidden  = trial.suggest_categorical(
             "gru_hidden", self.search["gru_hidden"]
         )
-        gru_layers  = trial.suggest_int(
-            "gru_layers",
-            self.search["gru_layers"][0],
-            self.search["gru_layers"][1],
-        )
-        gru_dropout = trial.suggest_float(
-            "gru_dropout",
-            self.search["gru_dropout"][0],
-            self.search["gru_dropout"][1],
-        )
         fc_hidden   = trial.suggest_categorical(
             "fc_hidden", self.search["fc_hidden"]
+        )
+        fc_dropout  = trial.suggest_float(
+            "fc_dropout", *self.search["fc_dropout"]
         )
         opt_name    = trial.suggest_categorical("optimizer", ["SGD", "Adam"])
 
@@ -702,13 +689,13 @@ class FusionGRUTuner:
             gesture_cnn_path = self.gesture_cnn_path,
             num_classes      = self.num_classes,
             gru_hidden       = gru_hidden,
-            gru_layers       = gru_layers,
-            gru_dropout      = gru_dropout,
             fc_hidden        = fc_hidden,
+            fc_dropout       = fc_dropout,
             device           = self.device,
         )
         trainer = FusionGRUTrainer(model, hyperparams)
 
+        out_of_memory = False
         try:
             trainer.fit(
                 t_loader, v_loader,
@@ -716,6 +703,17 @@ class FusionGRUTuner:
             )
         except optuna.exceptions.TrialPruned:
             raise
+        except torch.cuda.OutOfMemoryError:
+            out_of_memory = True
+
+        if out_of_memory:
+            # Skip this configuration instead of aborting the whole study.
+            del trainer, model, t_loader, v_loader
+            release_cuda_memory()
+            trial.set_user_attr("out_of_memory", True)
+            raise optuna.exceptions.TrialPruned(
+                f"CUDA out of memory (batch_size={batch_size})."
+            )
 
         scores = [
             FusionGRUTrainer._combined_metric(acc, f1)
@@ -797,9 +795,8 @@ class FusionGRUTuner:
             gesture_cnn_path = self.gesture_cnn_path,
             num_classes      = self.num_classes,
             gru_hidden       = p["gru_hidden"],
-            gru_layers       = p["gru_layers"],
-            gru_dropout      = p["gru_dropout"],
             fc_hidden        = p["fc_hidden"],
+            fc_dropout       = p["fc_dropout"],
             device           = self.device,
         )
 

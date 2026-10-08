@@ -28,7 +28,7 @@ from torch.utils.data import DataLoader
 
 from imu_cnn_window_model import IntentCNNWindow
 from mmg_cnn_window_model import LocomotionMMGCNNWindow
-from device_utils import resolve_device
+from device_utils import release_cuda_memory, resolve_device
 from early_stopping import EarlyStopping
 
 # Optuna visualisation
@@ -212,9 +212,7 @@ class FusionGRUWindow(nn.Module):
         imu_checkpoint : path to pretrained IntentCNNWindow checkpoint
         mmg_checkpoint : path to pretrained LocomotionMMGCNNWindow checkpoint
         num_classes    : output classes
-        gru_hidden_dim : hidden units in GRU layer
-        gru_num_layers : number of stacked GRU layers
-        gru_dropout    : dropout between GRU layers (if num_layers > 1)
+        gru_hidden_dim : hidden units in the (single-layer) GRU
         fc_hidden_dims : list of hidden layer sizes for FC head after GRU
         fc_dropout     : dropout probability in FC head
         seq_len        : sequence length for GRU input (default 1)
@@ -226,8 +224,6 @@ class FusionGRUWindow(nn.Module):
         mmg_checkpoint: str | None,
         num_classes:    int,
         gru_hidden_dim: int,
-        gru_num_layers: int = 1,
-        gru_dropout:    float = 0.0,
         fc_hidden_dims: list[int] | None = None,
         fc_dropout:     float = 0.5,
         seq_len:        int = 1,
@@ -249,9 +245,8 @@ class FusionGRUWindow(nn.Module):
         self.gru = nn.GRU(
             input_size    = self.backbones.feature_dim,
             hidden_size   = gru_hidden_dim,
-            num_layers    = gru_num_layers,
+            num_layers    = 1,
             batch_first   = True,
-            dropout       = gru_dropout if gru_num_layers > 1 else 0.0,
         )
 
         # A unidirectional GRU returns one hidden representation per timestep.
@@ -279,8 +274,6 @@ class FusionGRUWindow(nn.Module):
             mmg_checkpoint = mmg_checkpoint,
             num_classes    = num_classes,
             gru_hidden_dim = gru_hidden_dim,
-            gru_num_layers = gru_num_layers,
-            gru_dropout    = gru_dropout,
             fc_hidden_dims = fc_hidden_dims,
             fc_dropout     = fc_dropout,
             seq_len        = seq_len,
@@ -711,8 +704,8 @@ class FusionGRUWindowTuner:
     Wraps an Optuna study to find the best FusionGRUWindow hyperparameters.
 
     Searches over:
-        GRU         : hidden dimension, number of layers, dropout
-        FC head     : hidden layer sizes, dropout rate
+        GRU         : hidden dimension (single layer)
+        FC head     : hidden layer size (single layer), dropout rate
         Optimiser   : SGD or Adam (with respective hyperparameters)
         Training    : batch size, lr schedule
 
@@ -732,17 +725,13 @@ class FusionGRUWindowTuner:
     """
 
     _SEARCH = dict(
-        # GRU architecture
-        gru_hidden_dim = [64, 128, 256],
-        gru_num_layers = (1, 3),
-        gru_dropout    = (0.0, 0.5),
-        seq_len        = [1, 2, 4],
-        # FC head architecture
-        n_fc_layers    = (0, 2),
-        fc_hidden_dims = [64, 128, 256],
-        fc_dropout     = (0.2, 0.7),
+        # GRU architecture (single layer)
+        gru_hidden_dim = [64, 128, 256, 512],
+        # FC head architecture (one hidden FC layer + output layer)
+        fc_hidden_dim  = [64, 128, 256, 512],
+        fc_dropout     = (0.0, 0.1),
         # Training
-        batch_size     = [32, 64, 128],
+        batch_size     = [64, 128, 200],
         epochs         = 50,
         # SGD
         sgd_lr         = (1e-4, 1e-1),
@@ -801,34 +790,12 @@ class FusionGRUWindowTuner:
         gru_hidden_dim = trial.suggest_categorical(
             "gru_hidden_dim", self.search["gru_hidden_dim"]
         )
-        gru_num_layers = trial.suggest_int(
-            "gru_num_layers",
-            self.search["gru_num_layers"][0],
-            self.search["gru_num_layers"][1],
-        )
-        gru_dropout = trial.suggest_float(
-            "gru_dropout",
-            self.search["gru_dropout"][0],
-            self.search["gru_dropout"][1],
-        ) if gru_num_layers > 1 else 0.0
-
-        seq_len = trial.suggest_categorical(
-            "seq_len", self.search["seq_len"]
-        )
 
         # ── 2. Sample FC head architecture ──────────────────────────────────
-        n_fc_layers = trial.suggest_int(
-            "n_fc_layers",
-            self.search["n_fc_layers"][0],
-            self.search["n_fc_layers"][1],
+        fc_hidden_dim = trial.suggest_categorical(
+            "fc_hidden_dim", self.search["fc_hidden_dim"]
         )
-
-        fc_hidden_dims = []
-        for i in range(n_fc_layers):
-            dim = trial.suggest_categorical(
-                f"fc_hidden_dim_{i}", self.search["fc_hidden_dims"]
-            )
-            fc_hidden_dims.append(dim)
+        fc_hidden_dims = [fc_hidden_dim]
 
         fc_dropout = trial.suggest_float(
             "fc_dropout",
@@ -911,16 +878,14 @@ class FusionGRUWindowTuner:
             mmg_checkpoint = self.mmg_checkpoint,
             num_classes    = self.num_classes,
             gru_hidden_dim = gru_hidden_dim,
-            gru_num_layers = gru_num_layers,
-            gru_dropout    = gru_dropout,
-            fc_hidden_dims = fc_hidden_dims if fc_hidden_dims else None,
+            fc_hidden_dims = fc_hidden_dims,
             fc_dropout     = fc_dropout,
-            seq_len        = seq_len,
             device         = self.device,
         )
         trainer = FusionGRUWindowTrainer(model, hyperparams)
 
         # ── 6. Train (pruning enabled) ──────────────────────────────────────
+        out_of_memory = False
         try:
             trainer.fit(
                 t_loader,
@@ -931,6 +896,17 @@ class FusionGRUWindowTuner:
             )
         except optuna.exceptions.TrialPruned:
             raise
+        except torch.cuda.OutOfMemoryError:
+            out_of_memory = True
+
+        if out_of_memory:
+            # Skip this configuration instead of aborting the whole study.
+            del trainer, model, t_loader, v_loader
+            release_cuda_memory()
+            trial.set_user_attr("out_of_memory", True)
+            raise optuna.exceptions.TrialPruned(
+                f"CUDA out of memory (batch_size={batch_size})."
+            )
 
         # ── 7. Return combined metric ───────────────────────────────────────
         scores = [
@@ -1024,14 +1000,10 @@ class FusionGRUWindowTuner:
         if self._best_params is None:
             raise RuntimeError("Call run() before _build_best_model()")
         p         = self._best_params
-        n_fc      = p["n_fc_layers"]
 
         gru_hidden_dim = p["gru_hidden_dim"]
-        gru_num_layers = p["gru_num_layers"]
-        gru_dropout    = p.get("gru_dropout", 0.0)
-        seq_len        = p["seq_len"]
 
-        fc_hidden_dims = [p[f"fc_hidden_dim_{i}"] for i in range(n_fc)] if n_fc > 0 else None
+        fc_hidden_dims = [p["fc_hidden_dim"]]
         fc_dropout     = p["fc_dropout"]
 
         return FusionGRUWindow(
@@ -1039,11 +1011,8 @@ class FusionGRUWindowTuner:
             mmg_checkpoint = self.mmg_checkpoint,
             num_classes    = self.num_classes,
             gru_hidden_dim = gru_hidden_dim,
-            gru_num_layers = gru_num_layers,
-            gru_dropout    = gru_dropout,
             fc_hidden_dims = fc_hidden_dims,
             fc_dropout     = fc_dropout,
-            seq_len        = seq_len,
             device         = self.device,
         )
 
