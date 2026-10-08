@@ -1,0 +1,21 @@
+{
+  "best_epoch": 1,
+  "best_params": {
+    "batch_size": 64,
+    "dropout": 0.07800932022121826,
+    "fc_hidden": 128,
+    "lr_factor": 0.11646759543664197,
+    "lr_patience": 20,
+    "optimizer": "SGD",
+    "sgd_lr": 0.0396760507705299,
+    "sgd_momentum": 0.8743233534055306,
+    "sgd_wd": 0.0006796578090758161
+  },
+  "best_trial_number": 0,
+  "model_key": "fusion_cnn",
+  "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+  "objective_value": 1.0,
+  "study_name": "fusion_cnn__single_window__same-N019__20261008T152731Z",
+  "validation_accuracy": 1.0,
+  "validation_macro_f1": 1.0
+}
