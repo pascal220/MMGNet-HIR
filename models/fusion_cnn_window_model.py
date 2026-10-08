@@ -54,23 +54,39 @@ class _FrozenBackbones(nn.Module):
     Extracts features from both modalities and concatenates them.
 
     Args:
-        imu_checkpoint : path to IntentCNNWindow checkpoint
-        mmg_checkpoint : path to LocomotionMMGCNNWindow checkpoint
-        device         : torch device
+        imu_checkpoint   : path to IntentCNNWindow checkpoint
+        mmg_checkpoint   : path to LocomotionMMGCNNWindow checkpoint
+        device           : torch device
+        backbone_configs : {"imu": cfg, "mmg": cfg}; used instead of the
+                           checkpoint paths (weights then come from a saved
+                           fusion model's state dict)
     """
 
     def __init__(
         self,
-        imu_checkpoint: str,
-        mmg_checkpoint: str,
+        imu_checkpoint: str | None,
+        mmg_checkpoint: str | None,
         device:         torch.device,
+        backbone_configs: dict | None = None,
     ):
         super().__init__()
 
-        # ── Load IMU backbone ───────────────────────────────────────────────
-        imu_ckpt = torch.load(imu_checkpoint, map_location=device)
-        imu_cfg  = imu_ckpt["model_config"]
+        if imu_checkpoint is not None and mmg_checkpoint is not None:
+            imu_ckpt = torch.load(imu_checkpoint, map_location=device)
+            mmg_ckpt = torch.load(mmg_checkpoint, map_location=device)
+            imu_cfg  = imu_ckpt["model_config"]
+            mmg_cfg  = mmg_ckpt["model_config"]
+        elif backbone_configs is not None:
+            imu_ckpt = mmg_ckpt = None
+            imu_cfg  = backbone_configs["imu"]
+            mmg_cfg  = backbone_configs["mmg"]
+        else:
+            raise ValueError(
+                "Provide both backbone checkpoint paths or backbone_configs."
+            )
+        self.backbone_configs = dict(imu=dict(imu_cfg), mmg=dict(mmg_cfg))
 
+        # ── Build IMU backbone ──────────────────────────────────────────────
         self.imu_backbone = IntentCNNWindow(
             in_channels             = imu_cfg["in_channels"],
             num_classes             = imu_cfg["num_classes"],
@@ -79,17 +95,15 @@ class _FrozenBackbones(nn.Module):
             block_filters           = imu_cfg["block_filters"],
             kernel_pairs            = imu_cfg["kernel_pairs"],
         )
-        self.imu_backbone.load_state_dict(imu_ckpt["model_state_dict"])
+        if imu_ckpt is not None:
+            self.imu_backbone.load_state_dict(imu_ckpt["model_state_dict"])
         self.imu_backbone.eval()
 
         # Freeze IMU backbone
         for param in self.imu_backbone.parameters():
             param.requires_grad = False
 
-        # ── Load MMG backbone ───────────────────────────────────────────────
-        mmg_ckpt = torch.load(mmg_checkpoint, map_location=device)
-        mmg_cfg  = mmg_ckpt["model_config"]
-
+        # ── Build MMG backbone ──────────────────────────────────────────────
         self.mmg_backbone = LocomotionMMGCNNWindow(
             in_channels             = mmg_cfg["in_channels"],
             num_classes             = mmg_cfg["num_classes"],
@@ -102,7 +116,8 @@ class _FrozenBackbones(nn.Module):
             dropout_rates           = mmg_cfg["dropout_rates"],
             fc_hidden               = mmg_cfg.get("fc_hidden"),
         )
-        self.mmg_backbone.load_state_dict(mmg_ckpt["model_state_dict"])
+        if mmg_ckpt is not None:
+            self.mmg_backbone.load_state_dict(mmg_ckpt["model_state_dict"])
         self.mmg_backbone.eval()
 
         # Freeze MMG backbone
@@ -198,12 +213,13 @@ class FusionCNNWindow(nn.Module):
 
     def __init__(
         self,
-        imu_checkpoint: str,
-        mmg_checkpoint: str,
+        imu_checkpoint: str | None,
+        mmg_checkpoint: str | None,
         num_classes:    int,
         hidden_dims:    list[int],
         dropout_rate:   float = 0.5,
         device:         torch.device | str | None = None,
+        backbone_configs: dict | None = None,
     ):
         super().__init__()
 
@@ -211,7 +227,7 @@ class FusionCNNWindow(nn.Module):
 
         # ── Frozen backbones ────────────────────────────────────────────────
         self.backbones = _FrozenBackbones(
-            imu_checkpoint, mmg_checkpoint, device
+            imu_checkpoint, mmg_checkpoint, device, backbone_configs
         )
 
         # ── Trainable fusion head ───────────────────────────────────────────
@@ -236,9 +252,31 @@ class FusionCNNWindow(nn.Module):
             num_classes    = num_classes,
             hidden_dims    = hidden_dims,
             dropout_rate   = dropout_rate,
+            backbone_configs = self.backbones.backbone_configs,
         )
 
         self._initialise_weights()
+
+    @classmethod
+    def from_config(
+        cls, config: dict, device: torch.device | str | None = None
+    ) -> "FusionCNNWindow":
+        """Rebuild the architecture from a saved ``model_config`` (random weights)."""
+        return cls(
+            **{**config, "imu_checkpoint": None, "mmg_checkpoint": None},
+            device=device,
+        )
+
+    @classmethod
+    def from_checkpoint(
+        cls, path: str, device: torch.device | str | None = None
+    ) -> "FusionCNNWindow":
+        """Load a complete fusion model (backbones included) from one file."""
+        device = resolve_device(device)
+        ckpt   = torch.load(path, map_location=device)
+        model  = cls.from_config(ckpt["model_config"], device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        return model.to(device).eval()
 
     def _initialise_weights(self):
         for m in self.modules():

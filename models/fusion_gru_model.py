@@ -80,26 +80,44 @@ class _FrozenBackbones(nn.Module):
 
     def __init__(
         self,
-        intent_cnn_path:  str,
-        gesture_cnn_path: str,
+        intent_cnn_path:  str | None,
+        gesture_cnn_path: str | None,
         device:           torch.device,
+        backbone_configs: dict | None = None,
     ):
         super().__init__()
 
-        # ── Load IntentCNN ───────────────────────────────────────────────────
-        intent_ckpt  = torch.load(intent_cnn_path,  map_location=device)
-        intent_cfg   = intent_ckpt["model_config"]
+        # With checkpoint paths the backbones are loaded with their trained
+        # weights. Without them they are built from ``backbone_configs`` and
+        # the weights come from a saved fusion model's state dict.
+        if intent_cnn_path is not None and gesture_cnn_path is not None:
+            intent_ckpt  = torch.load(intent_cnn_path,  map_location=device)
+            gesture_ckpt = torch.load(gesture_cnn_path, map_location=device)
+            intent_cfg   = intent_ckpt["model_config"]
+            gesture_cfg  = gesture_ckpt["model_config"]
+        elif backbone_configs is not None:
+            intent_ckpt = gesture_ckpt = None
+            intent_cfg  = backbone_configs["intent"]
+            gesture_cfg = backbone_configs["gesture"]
+        else:
+            raise ValueError(
+                "Provide both backbone checkpoint paths or backbone_configs."
+            )
+        self.backbone_configs = dict(
+            intent=dict(intent_cfg), gesture=dict(gesture_cfg)
+        )
+
+        # ── Build IntentCNN ──────────────────────────────────────────────────
         intent_model = IntentCNN(
             in_channels   = intent_cfg["in_channels"],
             num_classes   = intent_cfg["num_classes"],
             block_filters = intent_cfg["block_filters"],
             kernel_pairs  = intent_cfg["kernel_pairs"],
         )
-        intent_model.load_state_dict(intent_ckpt["model_state_dict"])
+        if intent_ckpt is not None:
+            intent_model.load_state_dict(intent_ckpt["model_state_dict"])
 
-        # ── Load GestureCNN ──────────────────────────────────────────────────
-        gesture_ckpt  = torch.load(gesture_cnn_path, map_location=device)
-        gesture_cfg   = gesture_ckpt["model_config"]
+        # ── Build GestureCNN ─────────────────────────────────────────────────
         gesture_model = LocomotionMMGCNN(
             in_channels   = gesture_cfg["in_channels"],
             num_classes   = gesture_cfg["num_classes"],
@@ -109,7 +127,8 @@ class _FrozenBackbones(nn.Module):
             dropout_rates = gesture_cfg["dropout_rates"],
             fc_hidden     = gesture_cfg["fc_hidden"],
         )
-        gesture_model.load_state_dict(gesture_ckpt["model_state_dict"])
+        if gesture_ckpt is not None:
+            gesture_model.load_state_dict(gesture_ckpt["model_state_dict"])
 
         # ── Store backbone feature extractors only ───────────────────────────
         self.intent_backbone  = intent_model.blocks
@@ -179,14 +198,15 @@ class FusionGRU(nn.Module):
 
     def __init__(
         self,
-        intent_cnn_path:  str,
-        gesture_cnn_path: str,
+        intent_cnn_path:  str | None        = None,
+        gesture_cnn_path: str | None        = None,
         num_classes:      int                 = 7,
         gru_hidden:       int                 = 64,
         gru_layers:       int                 = 1,
         gru_dropout:      float               = 0.0,
         fc_hidden:        int                 = 128,
         device:           torch.device | None = None,
+        backbone_configs: dict | None         = None,
     ):
         super().__init__()
 
@@ -194,7 +214,7 @@ class FusionGRU(nn.Module):
 
         # ── Frozen backbones ─────────────────────────────────────────────────
         self.backbones = _FrozenBackbones(
-            intent_cnn_path, gesture_cnn_path, device
+            intent_cnn_path, gesture_cnn_path, device, backbone_configs
         )
         feat_dim = self.backbones.feature_dim
 
@@ -228,9 +248,36 @@ class FusionGRU(nn.Module):
             gru_dropout      = gru_dropout,
             fc_hidden        = fc_hidden,
             feature_dim      = feat_dim,
+            backbone_configs = self.backbones.backbone_configs,
         )
 
         self._init_weights()
+
+    @classmethod
+    def from_config(
+        cls, config: dict, device: torch.device | str | None = None
+    ) -> "FusionGRU":
+        """Rebuild the architecture from a saved ``model_config`` (random weights)."""
+        return cls(
+            num_classes      = config["num_classes"],
+            gru_hidden       = config["gru_hidden"],
+            gru_layers       = config["gru_layers"],
+            gru_dropout      = config["gru_dropout"],
+            fc_hidden        = config["fc_hidden"],
+            device           = device,
+            backbone_configs = config["backbone_configs"],
+        )
+
+    @classmethod
+    def from_checkpoint(
+        cls, path: str, device: torch.device | str | None = None
+    ) -> "FusionGRU":
+        """Load a complete fusion model (backbones included) from one file."""
+        device = resolve_device(device)
+        ckpt   = torch.load(path, map_location=device)
+        model  = cls.from_config(ckpt["model_config"], device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        return model.to(device).eval()
 
     def _init_weights(self):
         for m in self.head.modules():

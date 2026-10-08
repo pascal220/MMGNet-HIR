@@ -187,14 +187,14 @@ class TrainingExperimentTests(unittest.TestCase):
                 ],
                 "kernel_sizes": [[7, 5], [7, 5, 3], [5, 3], [5, 3], [3]],
                 "strides": [[3], [2, 1], [2, 1], [2, 1], [1]],
-                "batch_size": [32, 64, 128],
+                "batch_size": [64, 128, 200],
             },
             LocomotionMMGCNNWindowTuner: {
                 "n_blocks": (3, 4),
                 "filters": [[8, 16, 32], [16, 32, 64], [32, 64, 128], [64, 128, 256]],
-                "kernel_sizes": [[7, 5], [7, 5, 3], [5, 3], [3]],
+                "kernel_sizes": [[7, 5], [5, 3], [5, 3], [3]],
                 "strides": [[3], [2, 1], [2, 1], [1]],
-                "batch_size": [32, 64, 128, 256],
+                "batch_size": [64, 128],
             },
         }
         for tuner_class, expected in expected_spaces.items():

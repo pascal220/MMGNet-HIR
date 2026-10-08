@@ -205,6 +205,14 @@ def verify_run(run: TrainedRun, prepared: PreparedDataLike) -> None:
         )
 
 
+def _has_split_marker(run: TrainedRun, prepared: PreparedDataLike) -> bool:
+    """Windowed multi-volunteer runs must carry the ``separate-v<N>`` folder marker."""
+    config = prepared.experiment.config
+    if prepared.input_mode != "windowed" or config.same_volunteer_id is not None:
+        return True
+    return f"separate-v{config.train_volunteer_count}" in run.run_id
+
+
 def select_trained_run(
     prepared: PreparedDataLike,
     model_key: str,
@@ -219,6 +227,7 @@ def select_trained_run(
     matching = [
         run for run in candidates
         if not split_differences(run.experiment_config, settings)
+        and _has_split_marker(run, prepared)
     ]
     if not matching:
         raise ModelNotAvailableError(

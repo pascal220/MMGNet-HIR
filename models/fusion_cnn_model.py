@@ -75,26 +75,44 @@ class _FrozenBackbones(nn.Module):
 
     def __init__(
         self,
-        intent_cnn_path:  str,
-        gesture_cnn_path: str,
+        intent_cnn_path:  str | None,
+        gesture_cnn_path: str | None,
         device:           torch.device,
+        backbone_configs: dict | None = None,
     ):
         super().__init__()
 
-        # ── Load IntentCNN ───────────────────────────────────────────────────
-        intent_ckpt  = torch.load(intent_cnn_path,  map_location=device)
-        intent_cfg   = intent_ckpt["model_config"]
+        # With checkpoint paths the backbones are loaded with their trained
+        # weights. Without them they are built from ``backbone_configs`` and
+        # the weights come from a saved fusion model's state dict.
+        if intent_cnn_path is not None and gesture_cnn_path is not None:
+            intent_ckpt  = torch.load(intent_cnn_path,  map_location=device)
+            gesture_ckpt = torch.load(gesture_cnn_path, map_location=device)
+            intent_cfg   = intent_ckpt["model_config"]
+            gesture_cfg  = gesture_ckpt["model_config"]
+        elif backbone_configs is not None:
+            intent_ckpt = gesture_ckpt = None
+            intent_cfg  = backbone_configs["intent"]
+            gesture_cfg = backbone_configs["gesture"]
+        else:
+            raise ValueError(
+                "Provide both backbone checkpoint paths or backbone_configs."
+            )
+        self.backbone_configs = dict(
+            intent=dict(intent_cfg), gesture=dict(gesture_cfg)
+        )
+
+        # ── Build IntentCNN ──────────────────────────────────────────────────
         intent_model = IntentCNN(
             in_channels   = intent_cfg["in_channels"],
             num_classes   = intent_cfg["num_classes"],
             block_filters = intent_cfg["block_filters"],
             kernel_pairs  = intent_cfg["kernel_pairs"],
         )
-        intent_model.load_state_dict(intent_ckpt["model_state_dict"])
+        if intent_ckpt is not None:
+            intent_model.load_state_dict(intent_ckpt["model_state_dict"])
 
-        # ── Load GestureCNN ──────────────────────────────────────────────────
-        gesture_ckpt  = torch.load(gesture_cnn_path, map_location=device)
-        gesture_cfg   = gesture_ckpt["model_config"]
+        # ── Build GestureCNN ─────────────────────────────────────────────────
         gesture_model = LocomotionMMGCNN(
             in_channels   = gesture_cfg["in_channels"],
             num_classes   = gesture_cfg["num_classes"],
@@ -104,7 +122,8 @@ class _FrozenBackbones(nn.Module):
             dropout_rates = gesture_cfg["dropout_rates"],
             fc_hidden     = gesture_cfg["fc_hidden"],
         )
-        gesture_model.load_state_dict(gesture_ckpt["model_state_dict"])
+        if gesture_ckpt is not None:
+            gesture_model.load_state_dict(gesture_ckpt["model_state_dict"])
 
         # ── Store backbone feature extractors only (no classifier heads) ─────
         self.intent_backbone  = intent_model.blocks
@@ -176,21 +195,28 @@ class FusionCNN(nn.Module):
 
     Only the FC head is trained. Both backbones are frozen.
 
+    The saved fusion checkpoint is self-contained: it holds the backbone
+    architectures and weights, so ``from_checkpoint`` needs no other file.
+
     Args:
         intent_cnn_path  : path to saved IntentCNN  .pt checkpoint
         gesture_cnn_path : path to saved GestureCNN .pt checkpoint
         num_classes      : output classes (default 7)
         fc_hidden        : hidden units in FC layer
         device           : torch device
+        backbone_configs : {"intent": cfg, "gesture": cfg}; used instead of
+                           the checkpoint paths (weights then come from a
+                           fusion state dict)
     """
 
     def __init__(
         self,
-        intent_cnn_path:  str,
-        gesture_cnn_path: str,
+        intent_cnn_path:  str | None        = None,
+        gesture_cnn_path: str | None        = None,
         num_classes:      int                 = 7,
         fc_hidden:        int                 = 128,
         device:           torch.device | None = None,
+        backbone_configs: dict | None         = None,
     ):
         super().__init__()
 
@@ -198,7 +224,7 @@ class FusionCNN(nn.Module):
 
         # ── Frozen backbones ─────────────────────────────────────────────────
         self.backbones = _FrozenBackbones(
-            intent_cnn_path, gesture_cnn_path, device
+            intent_cnn_path, gesture_cnn_path, device, backbone_configs
         )
         feat_dim = self.backbones.feature_dim
 
@@ -218,9 +244,33 @@ class FusionCNN(nn.Module):
             num_classes      = num_classes,
             fc_hidden        = fc_hidden,
             feature_dim      = feat_dim,
+            backbone_configs = self.backbones.backbone_configs,
         )
 
         self._init_head()
+
+    @classmethod
+    def from_config(
+        cls, config: dict, device: torch.device | str | None = None
+    ) -> "FusionCNN":
+        """Rebuild the architecture from a saved ``model_config`` (random weights)."""
+        return cls(
+            num_classes      = config["num_classes"],
+            fc_hidden        = config["fc_hidden"],
+            device           = device,
+            backbone_configs = config["backbone_configs"],
+        )
+
+    @classmethod
+    def from_checkpoint(
+        cls, path: str, device: torch.device | str | None = None
+    ) -> "FusionCNN":
+        """Load a complete fusion model (backbones included) from one file."""
+        device = resolve_device(device)
+        ckpt   = torch.load(path, map_location=device)
+        model  = cls.from_config(ckpt["model_config"], device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        return model.to(device).eval()
 
     def _init_head(self):
         for m in self.head.modules():

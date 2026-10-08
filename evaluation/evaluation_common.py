@@ -33,7 +33,6 @@ from run_selection import (
     ModelNotAvailableError,
     TrainedRun,
     select_trained_run,
-    verify_parent_checkpoints,
 )
 from training_experiment import file_sha256
 
@@ -43,8 +42,9 @@ DEFAULT_OUTPUT_ROOT = "results/evaluation"
 TRANSITION_ORDER: tuple[str, ...] = ("100m", "50m", "0", "50", "100")
 CLASS_NAMES = [LABEL_TO_CLASS[label] for label in sorted(LABEL_TO_CLASS)]
 
-# Receives the checkpoint's model_config and the verified frozen parent paths.
-ModelBuilder = Callable[[dict[str, Any], Sequence[str]], torch.nn.Module]
+# Receives the checkpoint's model_config and returns an untrained model of that
+# architecture; every checkpoint is self-contained, so no other file is needed.
+ModelBuilder = Callable[[dict[str, Any]], torch.nn.Module]
 
 
 @dataclass(frozen=True)
@@ -63,9 +63,8 @@ def _load_model(
     prepared: PreparedData,
     device: torch.device,
 ) -> torch.nn.Module:
-    parents = [str(path) for path in verify_parent_checkpoints(run, prepared)]
     checkpoint = torch.load(run.checkpoint, map_location=device)
-    model = spec.build(dict(checkpoint["model_config"]), parents)
+    model = spec.build(dict(checkpoint["model_config"]))
     model.load_state_dict(checkpoint["model_state_dict"])
     return model.to(device).eval()
 

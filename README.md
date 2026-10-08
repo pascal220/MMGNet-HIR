@@ -261,7 +261,11 @@ Fusion entry points do not take backbone paths. They freeze the latest IMU and
 MMG runs of the same input mode that were trained on the same split, selected
 and verified as described in [Model selection](#model-selection). If either
 backbone is missing, training stops and prints the command that trains it.
-Train the standalone models first.
+Train the standalone models first. Each saved fusion checkpoint is
+self-contained: it stores the backbone architectures and weights alongside the
+fusion head, so `FusionCNN.from_checkpoint(path)` (and the GRU and windowed
+equivalents) and the evaluation workflow load it from that one file without the
+backbone checkpoints. The manifest still records the parents for provenance.
 
 ---
 

@@ -24,12 +24,12 @@ def evaluate_standalone_single_window(
     specs = (
         ModelSpec(
             "IMU", "imu_cnn",
-            lambda config, _: IntentCNN(**config),
+            lambda config: IntentCNN(**config),
             (prepared.X_imu_test,),
         ),
         ModelSpec(
             "MMG", "mmg_cnn",
-            lambda config, _: LocomotionMMGCNN(**config),
+            lambda config: LocomotionMMGCNN(**config),
             (prepared.X_cwt_test,),
         ),
     )

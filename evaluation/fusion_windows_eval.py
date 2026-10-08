@@ -12,20 +12,6 @@ from run_selection import DEFAULT_ARTIFACT_ROOT
 from split_utils import validate_prepared_data
 
 
-def _fusion_cnn(config, parents):
-    imu_checkpoint, mmg_checkpoint = parents
-    return FusionCNNWindow(
-        **{**config, "imu_checkpoint": imu_checkpoint, "mmg_checkpoint": mmg_checkpoint}
-    )
-
-
-def _fusion_gru(config, parents):
-    imu_checkpoint, mmg_checkpoint = parents
-    return FusionGRUWindow(
-        **{**config, "imu_checkpoint": imu_checkpoint, "mmg_checkpoint": mmg_checkpoint}
-    )
-
-
 def evaluate_fusion_windows(
     prepared: PreparedData,
     *,
@@ -37,8 +23,8 @@ def evaluate_fusion_windows(
     validate_prepared_data(prepared, "windowed", "fusion")
     inputs = (prepared.X_imu_test, prepared.X_cwt_test)
     specs = (
-        ModelSpec("FusionCNN", "fusion_cnn_windowed", _fusion_cnn, inputs),
-        ModelSpec("FusionGRU", "fusion_gru_windowed", _fusion_gru, inputs),
+        ModelSpec("FusionCNN", "fusion_cnn_windowed", FusionCNNWindow.from_config, inputs),
+        ModelSpec("FusionGRU", "fusion_gru_windowed", FusionGRUWindow.from_config, inputs),
     )
     return evaluate_models(
         prepared, specs,
