@@ -729,7 +729,7 @@ class FusionGRUWindowTuner:
         gru_hidden_dim = [64, 128, 256, 512],
         # FC head architecture (one hidden FC layer + output layer)
         fc_hidden_dim  = [64, 128, 256, 512],
-        fc_dropout     = (0.0, 0.1),
+        fc_dropout     = (0.0, 0.5),
         # Training
         batch_size     = [64, 128, 200],
         epochs         = 50,

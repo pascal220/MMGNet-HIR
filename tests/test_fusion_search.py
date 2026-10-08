@@ -29,7 +29,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 HIDDEN = [64, 128, 256, 512]
 BATCHES = [64, 128, 200]
-DROPOUT = (0.0, 0.1)
+DROPOUT = (0.0, 0.5)
 
 # (module, tuner class name, trainer class name, windowed, parameters searched)
 TUNERS = (
