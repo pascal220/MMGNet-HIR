@@ -33,7 +33,7 @@ from dataset_registry import (
     normalize_data_type,
     sample_bytes,
 )
-from datasets import SOURCE_FILE, ModalityTensors, SingleModalityDataset
+from datasets import SOURCE_FILE, ModalityTensors, SingleModalityDataset, sample_metadata
 from device_utils import release_cuda_memory
 from memory_manager import MemoryBudget, plan_resident_set
 
@@ -120,12 +120,14 @@ class ExperimentData:
     """Everything one experiment needs, keyed ``<split>_<modality>``.
 
     ``bundles`` holds the four resident tensors with their row-aligned labels and
-    metadata; ``loaders`` wraps the same tensors for training.
+    metadata; ``loaders`` wraps the same tensors for training. ``selected`` is
+    the split before the memory budget dropped any optional sample.
     """
 
     config: ExperimentConfig
     bundles: dict[str, ModalityTensors]
     loaders: dict[str, DataLoader]
+    selected: SelectedData | None = None
 
     @property
     def train_imu(self) -> ModalityTensors:
@@ -493,7 +495,7 @@ def _load_experiment(
             "%s tensor: %s (%s)",
             name, tuple(bundle.data.shape), bundle.shape_spec.describe(),
         )
-    return ExperimentData(config=config, bundles=bundles, loaders=loaders)
+    return ExperimentData(config=config, bundles=bundles, loaders=loaders, selected=selected)
 
 
 def _validate_model_target(model_target: str) -> ModelTarget:
@@ -563,9 +565,17 @@ def _combined_metadata(
     window_index: int | str,
 ) -> pd.DataFrame:
     """Build one metadata table containing both modality source files."""
-    metadata = imu.metadata.copy().reset_index(drop=True)
+    return _combine_modality_metadata(imu.metadata, mmg.metadata, window_index)
+
+
+def _combine_modality_metadata(
+    imu_metadata: pd.DataFrame,
+    mmg_metadata: pd.DataFrame,
+    window_index: int | str,
+) -> pd.DataFrame:
+    metadata = imu_metadata.copy().reset_index(drop=True)
     metadata = metadata.rename(columns={SOURCE_FILE: IMU_SOURCE_FILE})
-    metadata[MMG_SOURCE_FILE] = mmg.metadata[SOURCE_FILE].reset_index(drop=True)
+    metadata[MMG_SOURCE_FILE] = mmg_metadata[SOURCE_FILE].reset_index(drop=True)
     metadata[WINDOW_INDEX_COLUMN] = window_index
     return metadata
 
@@ -652,6 +662,41 @@ def prepare_training_data(
     if mode == "windowed":
         return prepare_windowed_inputs(experiment, model_target=model_target)
     return prepare_single_window_inputs(experiment, model_target=model_target)
+
+
+def reconstruct_train_metadata(
+    experiment: ExperimentData,
+    input_mode: str,
+    total_budget_gb: float,
+) -> pd.DataFrame:
+    """Return the training metadata ``experiment``'s split yields under another budget.
+
+    Only the residency plan is recomputed, so no array is read. The rows match
+    ``PreparedData.train_metadata`` of a run prepared with ``total_budget_gb``.
+    """
+    mode = _validate_input_mode(input_mode)
+    selected = experiment.selected
+    if selected is None:
+        raise ValueError("The experiment does not carry its pre-budget selection.")
+    plan = plan_resident_set(
+        selected.mandatory_train,
+        selected.mandatory_test,
+        selected.optional_train,
+        selected.optional_test,
+        budget=MemoryBudget(total_budget_gb=total_budget_gb),
+        seed=experiment.config.seed,
+    )
+    train_samples = pd.concat(
+        [selected.mandatory_train, plan.optional_train], ignore_index=True
+    )
+    metadata = _combine_modality_metadata(
+        sample_metadata(train_samples, "IMU"),
+        sample_metadata(train_samples, "MMG"),
+        ALL_WINDOWS,
+    )
+    if mode == "windowed":
+        return metadata
+    return _expand_metadata_for_windows(metadata, int(experiment.train_imu.data.shape[1]))
 
 
 def run_per_amputee_type(

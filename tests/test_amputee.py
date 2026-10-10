@@ -56,7 +56,9 @@ from training_experiment import file_sha256, metadata_fingerprint
 AMPUTEE_CLASS_NAMES = ["sit", "stand", "walking", "sit_to_stand", "stand_to_sit"]
 TRANSITION_CLASSES = AMPUTEE_CLASS_NAMES + ["standin_to_stand", "walk_to_stand"]
 MARKERS = ("0", "50", "100", "50m", "100m")
-TRAIN_METADATA = pd.DataFrame({"volunteer_id": ["A003"], "source_sample_index": [0]})
+TRAIN_METADATA = pd.DataFrame({
+    "volunteer_id": ["A003"], "imu_source_file": ["a.npy"], "source_sample_index": [0],
+})
 
 
 def _write_sparse(path: Path, shape: tuple[int, ...]) -> None:
@@ -219,6 +221,7 @@ def _amputee_prepared(data_type: str, input_mode: str = "single_window") -> Simp
         input_mode=input_mode,
         model_target="fusion",
         train_metadata=TRAIN_METADATA,
+        test_metadata=TRAIN_METADATA.iloc[0:0],
         X_imu_train=torch.zeros(1),
         X_cwt_train=torch.zeros(1),
     )

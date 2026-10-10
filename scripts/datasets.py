@@ -98,6 +98,32 @@ class ModalityShape:
         )
 
 
+def sample_metadata(samples: pd.DataFrame, modality: str) -> pd.DataFrame:
+    """Return the per-sample metadata of one modality without reading any array."""
+    modality = modality.upper()
+    samples = samples.reset_index(drop=True)
+    metadata = pd.DataFrame(
+        {
+            RegistryColumns.VOLUNTEER_ID: samples[RegistryColumns.VOLUNTEER_ID],
+            ACTIVITY_CLASS_NAME: samples[RegistryColumns.CLASS_LABEL].map(
+                LABEL_TO_CLASS
+            ),
+            RegistryColumns.CLASS_LABEL: samples[RegistryColumns.CLASS_LABEL],
+            RegistryColumns.TRANSITION_INFO: samples[
+                RegistryColumns.TRANSITION_INFO
+            ],
+            RegistryColumns.FOLDER: samples[RegistryColumns.FOLDER],
+            SOURCE_FILE: samples[MODALITY_PATH_COLUMN[modality]],
+            SOURCE_SAMPLE_INDEX: samples[SampleColumns.SAMPLE_INDEX],
+        }
+    )[METADATA_COLUMNS]
+    # Amputee samples also record their recording type and filename class.
+    for column in OPTIONAL_PAIR_COLUMNS:
+        if column in samples.columns:
+            metadata[column] = samples[column].to_numpy()
+    return metadata
+
+
 @dataclass(frozen=True)
 class ModalityTensors:
     """One resident split of one modality.
@@ -134,26 +160,7 @@ class ModalityTensors:
         labels = torch.from_numpy(
             samples[RegistryColumns.CLASS_LABEL].to_numpy(dtype="int64")
         )
-
-        metadata = pd.DataFrame(
-            {
-                RegistryColumns.VOLUNTEER_ID: samples[RegistryColumns.VOLUNTEER_ID],
-                ACTIVITY_CLASS_NAME: samples[RegistryColumns.CLASS_LABEL].map(
-                    LABEL_TO_CLASS
-                ),
-                RegistryColumns.CLASS_LABEL: samples[RegistryColumns.CLASS_LABEL],
-                RegistryColumns.TRANSITION_INFO: samples[
-                    RegistryColumns.TRANSITION_INFO
-                ],
-                RegistryColumns.FOLDER: samples[RegistryColumns.FOLDER],
-                SOURCE_FILE: samples[MODALITY_PATH_COLUMN[modality]],
-                SOURCE_SAMPLE_INDEX: samples[SampleColumns.SAMPLE_INDEX],
-            }
-        )[METADATA_COLUMNS]
-        # Amputee samples also record their recording type and filename class.
-        for column in OPTIONAL_PAIR_COLUMNS:
-            if column in samples.columns:
-                metadata[column] = samples[column].to_numpy()
+        metadata = sample_metadata(samples, modality)
 
         bundle = cls(
             modality=modality, data=data, labels=labels, metadata=metadata

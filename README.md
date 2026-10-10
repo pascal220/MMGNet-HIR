@@ -334,7 +334,8 @@ total. The progress bar and the final
 ## ⚙️ Installation
 
 ### Prerequisites
-- Python >= 3.11
+- 64-bit Python 3.12 (recommended). Other versions require compatible PyTorch
+    wheels; the newest Python release may not yet be supported.
 - CUDA-compatible GPU (recommended)
 
 ### Setup
@@ -347,10 +348,27 @@ cd HAR-MultiModal-DL
 
 **2. Create and activate a virtual environment**
 
+On Windows, install 64-bit Python 3.12 first, then explicitly select it:
+
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1   # Windows
-source venv/bin/activate      # Linux/macOS
+py -3.12 -m venv venv
+.\venv\Scripts\Activate.ps1
+python --version
+```
+
+On Linux/macOS:
+
+```bash
+python3.12 -m venv venv
+source venv/bin/activate
+```
+
+If pip reports `No matching distribution found for torch`, check the active
+Python version and architecture. Recreate the environment with a supported
+64-bit interpreter; upgrading pip alone cannot supply missing PyTorch wheels.
+
+```powershell
+python -c "import sys, struct; print(sys.version); print('Bits:', struct.calcsize('P') * 8)"
 ```
 
 **3. Install PyTorch and project dependencies**
@@ -475,8 +493,12 @@ For each model, `scripts/run_selection.py`:
    selected by their manifest mode and split settings.
 2. Takes the latest run by completion time.
 3. Verifies the checkpoint's SHA-256 and recomputes the training-metadata
-   fingerprint. A mismatch means the model may have seen the test samples, so
-   evaluation stops with an error.
+   fingerprint. If the run used another memory budget, its training set is
+   rebuilt under that budget (no arrays are read) before comparing, and the
+   rebuilt training samples must not overlap the current test set. A mismatch
+   means the model may have seen the test samples, so evaluation stops with an
+   error. Paths and line endings are normalised, so runs trained on Linux
+   verify on Windows and vice versa.
 
 Both models in a comparison must be available. If either is missing,
 evaluation stops and prints the `python main.py --train ...` command that

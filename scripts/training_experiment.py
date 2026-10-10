@@ -327,7 +327,7 @@ def file_sha256(path: Path) -> str:
 def _parent_checkpoint_record(path: Path, artifact_root: Path) -> dict[str, Any]:
     """Describe a fusion parent and link it to its run manifest when available."""
     checkpoint_hash = file_sha256(path)
-    record: dict[str, Any] = {"path": str(path), "sha256": checkpoint_hash}
+    record: dict[str, Any] = {"path": path.as_posix(), "sha256": checkpoint_hash}
     candidates = [path.parent / "manifest.json"]
     if artifact_root.is_dir():
         candidates.extend(artifact_root.glob("*/manifest.json"))
@@ -339,28 +339,39 @@ def _parent_checkpoint_record(path: Path, artifact_root: Path) -> dict[str, Any]
         except (OSError, json.JSONDecodeError):
             continue
         artifact = manifest.get("artifacts", {})
-        aliases = {str(alias) for alias in artifact.get("checkpoint_aliases", [])}
+        aliases = {_posix(alias) for alias in artifact.get("checkpoint_aliases", [])}
         if (
             artifact.get("checkpoint_sha256") == checkpoint_hash
-            or str(path) in aliases
+            or path.as_posix() in aliases
         ):
             record.update(
                 run_id=manifest.get("run_id"),
-                manifest_path=str(manifest_path),
+                manifest_path=manifest_path.as_posix(),
                 model_key=manifest.get("model", {}).get("key"),
             )
             break
     return record
 
 
-def metadata_fingerprint(metadata: pd.DataFrame) -> str:
+def _posix(path: Any) -> str:
+    return str(path).replace("\\", "/")
+
+
+def _canonical_csv(metadata: pd.DataFrame) -> str:
+    """Render metadata as CSV text that is identical on Windows and Linux."""
     normalized = metadata.reset_index(drop=True).astype(str)
-    return hashlib.sha256(normalized.to_csv(index=False).encode("utf-8")).hexdigest()
+    for column in normalized.columns:
+        if str(column).endswith("source_file"):
+            normalized[column] = normalized[column].map(_posix)
+    return normalized.to_csv(index=False, lineterminator="\n")
+
+
+def metadata_fingerprint(metadata: pd.DataFrame) -> str:
+    return hashlib.sha256(_canonical_csv(metadata).encode("utf-8")).hexdigest()
 
 
 def _split_fingerprint(metadata: pd.DataFrame, indices: np.ndarray) -> str:
-    selected = metadata.iloc[indices][GROUP_COLUMNS].reset_index(drop=True).astype(str)
-    return hashlib.sha256(selected.to_csv(index=False).encode("utf-8")).hexdigest()
+    return metadata_fingerprint(metadata.iloc[indices][GROUP_COLUMNS])
 
 
 def _package_version(name: str) -> str | None:
@@ -634,7 +645,7 @@ def run_training_experiment(
         if alias.resolve() != artifacts.checkpoint.resolve():
             alias.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(artifacts.checkpoint, alias)
-            aliases.append(str(alias))
+            aliases.append(alias.as_posix())
 
     experiment_config = asdict(prepared.experiment.config)
     manifest = {

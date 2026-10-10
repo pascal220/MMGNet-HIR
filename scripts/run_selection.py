@@ -15,7 +15,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from data_loader import reconstruct_train_metadata
 from dataset_registry import DatasetRegistry, normalize_amputee_id, normalize_data_type
+from split_utils import GROUP_COLUMNS
 from training_experiment import PreparedDataLike, file_sha256, metadata_fingerprint
 
 logger = logging.getLogger(__name__)
@@ -23,8 +25,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_ARTIFACT_ROOT = "results/training"
 
 # Experiment settings that change which samples land in train and test. The memory
-# budget is deliberately excluded: models are matched regardless of the budget they
-# were trained with, and the metadata fingerprint check still guards the split.
+# budget is deliberately excluded: it only drops optional samples within each side,
+# and verification rebuilds a run's training set under the budget it recorded.
 SPLIT_SETTINGS: dict[str, tuple[str, ...]] = {
     "same_volunteer": (
         "same_volunteer_id", "seed", "test_fraction", "just_states_ratio",
@@ -211,6 +213,49 @@ def _missing_run_message(
     return "\n".join(lines)
 
 
+def _sample_keys(metadata: Any) -> set[tuple[str, str]]:
+    return {
+        (str(path).replace("\\", "/"), str(index))
+        for path, index in zip(metadata[GROUP_COLUMNS[0]], metadata[GROUP_COLUMNS[1]])
+    }
+
+
+def _verify_trained_on_split(
+    run_id: str,
+    model_key: str,
+    manifest: Mapping[str, Any],
+    prepared: PreparedDataLike,
+) -> None:
+    """Check a run's training samples came from this split and exclude its test samples.
+
+    A run trained under another memory budget used another subset of the same
+    split, so its training metadata is rebuilt under that budget and compared.
+    """
+    recorded = manifest["data"]["metadata_fingerprint_sha256"]
+    train_metadata = prepared.train_metadata
+    matches = metadata_fingerprint(train_metadata) == recorded
+    budget = manifest["data"]["experiment_config"].get("total_budget_gb")
+    if not matches and budget is not None and not math.isclose(
+        budget, prepared.experiment.config.total_budget_gb
+    ):
+        train_metadata = reconstruct_train_metadata(
+            prepared.experiment, prepared.input_mode, budget
+        )
+        matches = metadata_fingerprint(train_metadata) == recorded
+    if not matches:
+        raise RunVerificationError(
+            f"Run {run_id} was trained on a different split than the one prepared now "
+            "(training-metadata fingerprint mismatch), so its test samples cannot be "
+            "guaranteed unseen. This happens when the data files or the selection code "
+            "differ from training. Retrain with: "
+            f"{_train_command(model_key, prepared)}"
+        )
+    if _sample_keys(train_metadata) & _sample_keys(prepared.test_metadata):
+        raise RunVerificationError(
+            f"Run {run_id} was trained on samples that are in the current test set."
+        )
+
+
 def verify_run(run: TrainedRun, prepared: PreparedDataLike) -> None:
     """Check the checkpoint is unchanged and the run was trained on this split."""
     if not run.checkpoint.is_file():
@@ -219,14 +264,7 @@ def verify_run(run: TrainedRun, prepared: PreparedDataLike) -> None:
         raise RunVerificationError(
             f"Checkpoint {run.checkpoint} has changed since run {run.run_id} was trained."
         )
-    if metadata_fingerprint(prepared.train_metadata) != run.manifest["data"]["metadata_fingerprint_sha256"]:
-        raise RunVerificationError(
-            f"Run {run.run_id} was trained on a different split than the one prepared now "
-            "(training-metadata fingerprint mismatch), so its test samples cannot be "
-            "guaranteed unseen. This happens when the data files, the selection code or "
-            "the path separators (Windows vs Linux) differ from training. Retrain with: "
-            f"{_train_command(run.model_key, prepared)}"
-        )
+    _verify_trained_on_split(run.run_id, run.model_key, run.manifest, prepared)
 
 
 def _has_split_marker(run: TrainedRun, prepared: PreparedDataLike) -> bool:
@@ -306,7 +344,6 @@ def require_trained_runs(
 
 def verify_parent_checkpoints(run: TrainedRun, prepared: PreparedDataLike) -> list[Path]:
     """Return a fusion run's frozen parent checkpoints after checking they are unchanged."""
-    fingerprint = metadata_fingerprint(prepared.train_metadata)
     paths: list[Path] = []
     for record in run.parent_checkpoints:
         path = Path(record["path"])
@@ -322,9 +359,11 @@ def verify_parent_checkpoints(run: TrainedRun, prepared: PreparedDataLike) -> li
                 f"Run {run.run_id} parent checkpoint {path} is not linked to a training run."
             )
         parent = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
-        if parent["data"]["metadata_fingerprint_sha256"] != fingerprint:
-            raise RunVerificationError(
-                f"Run {run.run_id} parent {parent['run_id']} was trained on a different split."
-            )
+        _verify_trained_on_split(
+            f"{run.run_id} parent {parent['run_id']}",
+            parent["model"]["key"],
+            parent,
+            prepared,
+        )
         paths.append(path)
     return paths

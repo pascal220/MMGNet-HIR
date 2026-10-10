@@ -1,0 +1,389 @@
+{
+  "artifacts": {
+    "best_trial_json": "best_trial.json",
+    "checkpoint": "mmg_cnn__single_window__same-N011__20261004T151755Z.pt",
+    "checkpoint_alias_saved_at_utc": "2026-10-04T16:05:07.182077+00:00",
+    "checkpoint_aliases": [
+      "checkpoints/best_mmg_cnn_2026-10-04_VN011_A98.65.pt"
+    ],
+    "checkpoint_sha256": "86c51c421e149a9b0c103aeb58ba30128185de5e514e3db8fd5524288c759982",
+    "plots": {
+      "generated": [
+        "plots/optimization_history.html",
+        "plots/parameter_importances.html",
+        "plots/parallel_coordinate.html",
+        "plots/slice.html"
+      ],
+      "skipped": {}
+    },
+    "study_journal": "study.journal",
+    "trials_csv": "trials.csv"
+  },
+  "completed_at_utc": "2026-10-04T16:05:07.185145+00:00",
+  "data": {
+    "class_distribution": {
+      "0": 2744,
+      "1": 4712,
+      "2": 1804,
+      "3": 1532,
+      "4": 2528,
+      "5": 408,
+      "6": 408
+    },
+    "development_rows": 14136,
+    "development_volunteers": [
+      "N011"
+    ],
+    "experiment_config": {
+      "batch_size": 32,
+      "just_states_ratio": 1.05,
+      "same_volunteer_id": "N011",
+      "seed": 42,
+      "test_fraction": 0.1,
+      "test_volunteer_count": 2,
+      "total_budget_gb": 15.0,
+      "train_volunteer_count": 8
+    },
+    "group_columns": [
+      "imu_source_file",
+      "source_sample_index"
+    ],
+    "metadata_fingerprint_sha256": "ec5a994894655355d2932e37181caa88cbb868ae5377c73a748aed957e017db6",
+    "search_train_fingerprint_sha256": "731f2745bfcf801960d9bb60dd23bd257ed67e10f2f0fbf49c2832434e77ae46",
+    "search_train_rows": 12720,
+    "test_set_accessed": false,
+    "validation_fingerprint_sha256": "9fc319d27652133a86f8d47bc5806d0766bb036923b0496601f716f267ea134b",
+    "validation_fraction": 0.1,
+    "validation_protocol": "single grouped stratified holdout",
+    "validation_rows": 1416
+  },
+  "duration_seconds": 2831.230902336072,
+  "environment": {
+    "compute_device": {
+      "cuda_available": true,
+      "cuda_device_count": 2,
+      "cuda_version": "13.0",
+      "cudnn_version": 92400,
+      "device_name": "NVIDIA GeForce RTX 4090",
+      "index": 0,
+      "requested": "auto",
+      "resolved": "cuda",
+      "torch": "2.14.0+cu130",
+      "type": "cuda"
+    },
+    "cuda_available": true,
+    "cuda_version": "13.0",
+    "git": {
+      "commit": "23ba92aee78ecbb810faf1e8315e4e19f6d71b1a",
+      "dirty": true
+    },
+    "numpy": "2.4.6",
+    "optuna": "5.0.0",
+    "pandas": "3.0.5",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "plotly": "7.1.0",
+    "python": "3.11.16 (main, Aug 27 2026, 14:44:21) [GCC 14.3.0]",
+    "scikit_learn": "1.9.1",
+    "seed": 42,
+    "torch": "2.14.0+cu130"
+  },
+  "final_refit": {
+    "actual_epochs": 100,
+    "class_weights": [
+      0.7359433569346107,
+      0.42857142857142855,
+      1.119417168197656,
+      1.31816486385677,
+      0.7988245931283906,
+      4.949579831932773,
+      4.949579831932773
+    ],
+    "early_stopping": {
+      "best_epoch": 100,
+      "best_value": 0.032693756416431574,
+      "enabled": true,
+      "epochs_without_improvement": 0,
+      "min_delta": 0.0001,
+      "monitor": "train_loss",
+      "patience": 10,
+      "restored_best_weights": true,
+      "stopped_epoch": null
+    },
+    "epochs": 100,
+    "final_training_accuracy": 0.9864883984153934,
+    "history_path": "training_history.json",
+    "policy": "all non-test development data for up to configured final epoch count with train-loss early stopping",
+    "training_params": {
+      "batch_size": 64,
+      "beta1": 0.9395886443531026,
+      "beta2": 0.9880174486696454,
+      "class_weights": [
+        0.7359433569346107,
+        0.42857142857142855,
+        1.119417168197656,
+        1.31816486385677,
+        0.7988245931283906,
+        4.949579831932773,
+        4.949579831932773
+      ],
+      "device": "cuda",
+      "early_stopping_min_delta": 0.0001,
+      "early_stopping_monitor": "train_loss",
+      "early_stopping_patience": 10,
+      "epochs": 100,
+      "lr": 0.00014148591376866886,
+      "lr_factor": 0.2877485470829725,
+      "lr_patience": 8,
+      "optimizer": "Adam",
+      "restore_best_weights": true,
+      "weight_decay": 0.0006820462930565923
+    }
+  },
+  "model": {
+    "class": "LocomotionMMGCNN",
+    "config": {
+      "block_filters": [
+        32,
+        64,
+        128,
+        128,
+        256
+      ],
+      "dropout_rates": [
+        0.04791160516606081,
+        0.01159990767885003,
+        0.029713953691241635,
+        0.0134286998655914,
+        0.028620957456786045
+      ],
+      "fc_hidden": 256,
+      "in_channels": 5,
+      "kernel_sizes": [
+        5,
+        3,
+        5,
+        5,
+        3
+      ],
+      "num_classes": 7,
+      "strides": [
+        3,
+        1,
+        1,
+        2,
+        1
+      ]
+    },
+    "input_mode": "single_window",
+    "input_shapes": [
+      [
+        5,
+        40,
+        125
+      ]
+    ],
+    "key": "mmg_cnn",
+    "label_mapping": {
+      "0": "sit",
+      "1": "stand",
+      "2": "walking",
+      "3": "sit_to_stand",
+      "4": "stand_to_sit",
+      "5": "stairs_up",
+      "6": "stairs_down"
+    },
+    "model_target": "standalone",
+    "num_classes": 7,
+    "parent_checkpoints": [],
+    "total_parameters": 1000551,
+    "trainable_parameters": 1000551
+  },
+  "optimization": {
+    "completed_trials_total": 100,
+    "direction": "maximize",
+    "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+    "pruner": "MedianPruner(n_startup_trials=5,n_warmup_steps=10,interval_steps=1)",
+    "raw_best_params": {
+      "adam_beta1": 0.9395886443531026,
+      "adam_beta2": 0.9880174486696454,
+      "adam_lr": 0.00014148591376866886,
+      "adam_wd": 0.0006820462930565923,
+      "batch_size": 64,
+      "block_0_dropout": 0.04791160516606081,
+      "block_0_filters": 32,
+      "block_0_kernel": 5,
+      "block_0_stride": 3,
+      "block_1_dropout": 0.01159990767885003,
+      "block_1_filters": 64,
+      "block_1_kernel": 3,
+      "block_1_stride": 1,
+      "block_2_dropout": 0.029713953691241635,
+      "block_2_filters": 128,
+      "block_2_kernel": 5,
+      "block_2_stride": 1,
+      "block_3_dropout": 0.0134286998655914,
+      "block_3_filters": 128,
+      "block_3_kernel": 5,
+      "block_3_stride": 2,
+      "block_4_dropout": 0.028620957456786045,
+      "block_4_filters": 256,
+      "block_4_kernel": 3,
+      "block_4_stride": 1,
+      "fc_hidden": "256",
+      "lr_factor": 0.2877485470829725,
+      "lr_patience": 8,
+      "n_blocks": 5,
+      "optimizer": "Adam"
+    },
+    "requested_additional_trials": 100,
+    "sampler": "TPESampler(seed=42)",
+    "search_class_weights": [
+      0.7362815466543181,
+      0.4285714285714286,
+      1.1189303307529908,
+      1.3205980066445182,
+      0.7983931709766507,
+      4.937888198757764,
+      4.937888198757764
+    ],
+    "search_space": {
+      "adam_beta1": [
+        0.85,
+        0.99
+      ],
+      "adam_beta2": [
+        0.9,
+        0.9999
+      ],
+      "adam_lr": [
+        0.0001,
+        0.01
+      ],
+      "adam_wd": [
+        1e-06,
+        0.01
+      ],
+      "batch_size": [
+        64,
+        128,
+        200
+      ],
+      "dropout_rates": [
+        0.01,
+        0.05
+      ],
+      "epochs": 50,
+      "fc_hidden": [
+        128,
+        256,
+        512
+      ],
+      "filters": [
+        [
+          8,
+          16,
+          32
+        ],
+        [
+          16,
+          32,
+          64
+        ],
+        [
+          32,
+          64,
+          128
+        ],
+        [
+          64,
+          128,
+          256
+        ],
+        [
+          128,
+          256,
+          512
+        ]
+      ],
+      "kernel_sizes": [
+        [
+          7,
+          5
+        ],
+        [
+          7,
+          5,
+          3
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          3
+        ]
+      ],
+      "lr_factor": [
+        0.1,
+        0.9
+      ],
+      "lr_patience": [
+        5,
+        20
+      ],
+      "n_blocks": [
+        3,
+        5
+      ],
+      "sgd_lr": [
+        0.0001,
+        0.1
+      ],
+      "sgd_momentum": [
+        0.7,
+        0.99
+      ],
+      "sgd_wd": [
+        1e-06,
+        0.01
+      ],
+      "strides": [
+        [
+          3
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          1
+        ]
+      ]
+    },
+    "selection": {
+      "best_epoch": 47,
+      "best_trial_number": 81,
+      "objective_value": 0.8792996587974238,
+      "validation_accuracy": 0.8961864406779662,
+      "validation_macro_f1": 0.8624128769168815
+    },
+    "study_name": "mmg_cnn__single_window__same-N011__20261004T151755Z",
+    "timeout_seconds": null
+  },
+  "run_id": "mmg_cnn__single_window__same-N011__20261004T151755Z",
+  "schema_version": 1,
+  "started_at_utc": "2026-10-04T15:17:55.954238+00:00",
+  "status": "completed"
+}

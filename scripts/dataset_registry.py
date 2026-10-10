@@ -634,7 +634,7 @@ class DatasetRegistry:
         folder_tag: str,
     ) -> Optional[dict]:
         try:
-            metadata: FileMetadata = self._parser.parse(str(file_path))
+            metadata: FileMetadata = self._parser.parse(file_path.as_posix())
         except ValueError as exc:
             logger.warning(f"Skipping '{file_path.name}': {exc}")
             return None

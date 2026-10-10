@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -23,7 +25,25 @@ from run_selection import (
 from summarise_best_trials import collect_best_trials, summarise
 from training_experiment import file_sha256, metadata_fingerprint
 
-TRAIN_METADATA = pd.DataFrame({"volunteer_id": ["N004", "N004"], "source_sample_index": [0, 1]})
+TRAIN_METADATA = pd.DataFrame({
+    "volunteer_id": ["N004", "N004"],
+    "imu_source_file": ["data/transitions/a.npy", "data/transitions/a.npy"],
+    "source_sample_index": [0, 1],
+})
+TEST_METADATA = pd.DataFrame({
+    "volunteer_id": ["N004"],
+    "imu_source_file": ["data/transitions/a.npy"],
+    "source_sample_index": [2],
+})
+# The same run trained with a larger budget also kept a just_states sample.
+LARGER_BUDGET_METADATA = pd.concat([
+    TRAIN_METADATA,
+    pd.DataFrame({
+        "volunteer_id": ["N004"],
+        "imu_source_file": ["data/just_states/b.npy"],
+        "source_sample_index": [0],
+    }),
+], ignore_index=True)
 
 
 def _prepared(
@@ -44,6 +64,7 @@ def _prepared(
         experiment=SimpleNamespace(config=config),
         input_mode=input_mode,
         train_metadata=TRAIN_METADATA,
+        test_metadata=TEST_METADATA,
     )
 
 
@@ -181,6 +202,61 @@ class RunSelectionTests(unittest.TestCase):
 
         with self.assertRaises(RunVerificationError):
             select_trained_run(_prepared("4"), "imu_cnn_windowed", self.root)
+
+    def test_run_with_other_budget_is_verified_against_rebuilt_training_set(self) -> None:
+        _write_run(
+            self.root, "larger_budget", total_budget_gb=24.0,
+            fingerprint=metadata_fingerprint(LARGER_BUDGET_METADATA),
+        )
+
+        with patch(
+            "run_selection.reconstruct_train_metadata", return_value=LARGER_BUDGET_METADATA,
+        ) as rebuild:
+            run = select_trained_run(_prepared("4"), "imu_cnn_windowed", self.root)
+
+        self.assertEqual(run.run_id, "larger_budget")
+        self.assertEqual(rebuild.call_args.args[1:], ("windowed", 24.0))
+
+    def test_rebuilt_training_set_must_match_the_recorded_fingerprint(self) -> None:
+        _write_run(self.root, "tampered", total_budget_gb=24.0, fingerprint="0" * 64)
+
+        with patch(
+            "run_selection.reconstruct_train_metadata", return_value=LARGER_BUDGET_METADATA,
+        ), self.assertRaises(RunVerificationError):
+            select_trained_run(_prepared("4"), "imu_cnn_windowed", self.root)
+
+    def test_training_samples_in_the_test_set_stop_with_error(self) -> None:
+        leaked = pd.concat([TRAIN_METADATA, TEST_METADATA], ignore_index=True)
+        _write_run(
+            self.root, "leaked", total_budget_gb=24.0, fingerprint=metadata_fingerprint(leaked),
+        )
+
+        with patch("run_selection.reconstruct_train_metadata", return_value=leaked), \
+                self.assertRaises(RunVerificationError) as raised:
+            select_trained_run(_prepared("4"), "imu_cnn_windowed", self.root)
+
+        self.assertIn("current test set", str(raised.exception))
+
+
+class FingerprintTests(unittest.TestCase):
+    def test_fingerprint_ignores_path_separators(self) -> None:
+        windows = TRAIN_METADATA.assign(
+            imu_source_file=TRAIN_METADATA["imu_source_file"].str.replace("/", "\\")
+        )
+
+        self.assertEqual(metadata_fingerprint(windows), metadata_fingerprint(TRAIN_METADATA))
+
+    def test_fingerprint_uses_unix_line_endings(self) -> None:
+        text = (
+            "volunteer_id,imu_source_file,source_sample_index\n"
+            "N004,data/transitions/a.npy,0\n"
+            "N004,data/transitions/a.npy,1\n"
+        )
+
+        self.assertEqual(
+            metadata_fingerprint(TRAIN_METADATA),
+            hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        )
 
 
 class MetricTests(unittest.TestCase):
