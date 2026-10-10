@@ -13,9 +13,9 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
-from dataset_registry import DatasetRegistry
+from dataset_registry import DatasetRegistry, normalize_amputee_id, normalize_data_type
 from training_experiment import PreparedDataLike, file_sha256, metadata_fingerprint
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,14 @@ SPLIT_SETTINGS: dict[str, tuple[str, ...]] = {
     "separate_volunteers": (
         "train_volunteer_count", "test_volunteer_count", "seed", "just_states_ratio",
     ),
+    "amputee": (
+        "amputee_id", "data_type", "seed", "test_fraction", "just_states_ratio",
+    ),
 }
-_DATA_IDENTITY = {"setup", "same_volunteer_id", "train_volunteer_count", "test_volunteer_count"}
+_DATA_IDENTITY = {
+    "setup", "same_volunteer_id", "train_volunteer_count", "test_volunteer_count",
+    "amputee_id", "data_type",
+}
 
 
 class ModelNotAvailableError(LookupError):
@@ -92,12 +98,21 @@ def load_completed_runs(artifact_root: str | Path = DEFAULT_ARTIFACT_ROOT) -> li
 
 
 def _setup(settings: Mapping[str, Any]) -> str:
+    # Manifests written before amputee support have no amputee_id key.
+    if settings.get("amputee_id") is not None:
+        return "amputee"
     return "separate_volunteers" if settings.get("same_volunteer_id") is None else "same_volunteer"
 
 
 def _normalise(name: str, value: Any) -> Any:
-    if name == "same_volunteer_id" and value is not None:
+    if value is None:
+        return value
+    if name == "same_volunteer_id":
         return DatasetRegistry.normalize_volunteer_id(value)
+    if name == "amputee_id":
+        return normalize_amputee_id(value)
+    if name == "data_type":
+        return normalize_data_type(value)
     return value
 
 
@@ -125,6 +140,11 @@ def split_differences(
 
 def describe_split(settings: Mapping[str, Any]) -> str:
     """Return a short human-readable description of the data split."""
+    if _setup(settings) == "amputee":
+        return (
+            f"amputee {_normalise('amputee_id', settings['amputee_id'])} "
+            f"{_normalise('data_type', settings['data_type'])}"
+        )
     if _setup(settings) == "same_volunteer":
         return f"volunteer {_normalise('same_volunteer_id', settings['same_volunteer_id'])}"
     return (
@@ -136,7 +156,7 @@ def describe_split(settings: Mapping[str, Any]) -> str:
 def _current_settings(prepared: PreparedDataLike) -> dict[str, Any]:
     config = prepared.experiment.config
     return {
-        name: getattr(config, name)
+        name: getattr(config, name, None)
         for names in SPLIT_SETTINGS.values()
         for name in names
     }
@@ -145,7 +165,11 @@ def _current_settings(prepared: PreparedDataLike) -> dict[str, Any]:
 def _train_command(model_key: str, prepared: PreparedDataLike) -> str:
     config = prepared.experiment.config
     target = "fusion" if model_key.startswith("fusion") else "standalone"
-    if config.same_volunteer_id is not None:
+    amputee_id = getattr(config, "amputee_id", None)
+    if amputee_id is not None:
+        # One amputee training run always trains every data type.
+        data = f"--amputee-id {normalize_amputee_id(amputee_id)}"
+    elif config.same_volunteer_id is not None:
         data = f"--same-volunteer-id {config.same_volunteer_id}"
     else:
         data = (
@@ -208,17 +232,21 @@ def verify_run(run: TrainedRun, prepared: PreparedDataLike) -> None:
 def _has_split_marker(run: TrainedRun, prepared: PreparedDataLike) -> bool:
     """Windowed multi-volunteer runs must carry the ``separate-v<N>`` folder marker."""
     config = prepared.experiment.config
-    if prepared.input_mode != "windowed" or config.same_volunteer_id is not None:
+    if (
+        prepared.input_mode != "windowed"
+        or config.same_volunteer_id is not None
+        or getattr(config, "amputee_id", None) is not None
+    ):
         return True
     return f"separate-v{config.train_volunteer_count}" in run.run_id
 
 
-def select_trained_run(
+def _candidate_runs(
     prepared: PreparedDataLike,
     model_key: str,
-    artifact_root: str | Path = DEFAULT_ARTIFACT_ROOT,
-) -> TrainedRun:
-    """Return the latest verified run of ``model_key`` trained on the prepared split."""
+    artifact_root: str | Path,
+) -> tuple[list[TrainedRun], list[TrainedRun]]:
+    """Return ``(candidates, matching)`` runs of ``model_key`` for the prepared split."""
     settings = _current_settings(prepared)
     candidates = [
         run for run in load_completed_runs(artifact_root)
@@ -229,6 +257,16 @@ def select_trained_run(
         if not split_differences(run.experiment_config, settings)
         and _has_split_marker(run, prepared)
     ]
+    return candidates, matching
+
+
+def select_trained_run(
+    prepared: PreparedDataLike,
+    model_key: str,
+    artifact_root: str | Path = DEFAULT_ARTIFACT_ROOT,
+) -> TrainedRun:
+    """Return the latest verified run of ``model_key`` trained on the prepared split."""
+    candidates, matching = _candidate_runs(prepared, model_key, artifact_root)
     if not matching:
         raise ModelNotAvailableError(
             _missing_run_message(model_key, prepared, candidates, artifact_root)
@@ -237,6 +275,33 @@ def select_trained_run(
     verify_run(run, prepared)
     logger.info("Selected %s run %s (completed %s).", model_key, run.run_id, run.completed_at)
     return run
+
+
+def require_trained_runs(
+    splits: Sequence[PreparedDataLike],
+    model_keys: Sequence[str],
+    artifact_root: str | Path = DEFAULT_ARTIFACT_ROOT,
+) -> None:
+    """Raise ``ModelNotAvailableError`` unless every model has a run for every split.
+
+    Only manifests are read, so ``splits`` may be lightweight objects exposing
+    ``experiment.config`` and ``input_mode`` and no data needs to be loaded.
+    Checkpoint and split fingerprints are still verified by ``select_trained_run``.
+    """
+    missing: list[str] = []
+    for prepared in splits:
+        for model_key in model_keys:
+            candidates, matching = _candidate_runs(prepared, model_key, artifact_root)
+            if not matching:
+                missing.append(
+                    _missing_run_message(model_key, prepared, candidates, artifact_root)
+                )
+    if missing:
+        lines = list(dict.fromkeys(line for message in missing for line in message.splitlines()))
+        commands = [line for line in lines if line.lstrip().startswith("Train it first")]
+        raise ModelNotAvailableError(
+            "\n".join([line for line in lines if line not in commands] + commands)
+        )
 
 
 def verify_parent_checkpoints(run: TrainedRun, prepared: PreparedDataLike) -> list[Path]:

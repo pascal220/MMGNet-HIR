@@ -115,6 +115,25 @@ following fields:
 | `transition_descriptor` | Transition point descriptor string (if applicable) |
 | `shape` | Tensor shape of the file |
 
+### Amputee Data
+`data/amputee/` uses the same `transitions/` and `just_states/` layout and the
+same transition markers, with one amputee per ID (e.g. `A003`):
+
+```
+Last_Series_A003_type1_IMU_sit_100m.npy           # transitions/
+Last_Series_Wavelet_A003_type1_MMG_walking.npy    # just_states/
+```
+
+The data type (`type1`, `type2`) is read from the file name. Each type is a
+**separate dataset**: it gets its own split, class balancing, models and
+evaluation, and samples of different types are never mixed.
+
+Amputee data has **5 classes**: `sit` (0), `stand` (1), `walking` (2),
+`sit_to_stand` (3) and `stand_to_sit` (4). The transition files
+`standin_to_stand` and `walk_to_stand` are labelled `stand`. Their original
+name is kept in the `source_class` metadata column, so the split still
+stratifies them separately.
+
 ---
 
 ## 🗂️ Project Structure
@@ -126,7 +145,8 @@ MMGNet-HIR/
 ├── requirements.txt
 ├── data/
 │   ├── transitions/         # Files with a transition marker (100m, 50m, 0, 50, 100)
-│   └── just_states/         # Steady-state files without a marker
+│   ├── just_states/         # Steady-state files without a marker
+│   └── amputee/             # Amputee data, same transitions/ and just_states/ layout
 ├── scripts/                 # Registry, split, memory planning, training lifecycle, run selection
 ├── models/                  # IMU/MMG CNNs and CNN/GRU fusion models (single-window and windowed)
 ├── train/                   # Training entry points, one per model family
@@ -223,7 +243,7 @@ Five deep learning architectures are implemented and benchmarked:
 
 ### Reproducible Optuna training
 
-The six public functions in `train/` cover eight model variants: standalone IMU
+The six volunteer-data entry points in `train/` cover eight model variants: standalone IMU
 and MMG CNNs plus CNN and GRU fusion models, each in single-window and windowed
 forms. Every entry point now follows the same experiment lifecycle:
 
@@ -266,6 +286,34 @@ self-contained: it stores the backbone architectures and weights alongside the
 fusion head, so `FusionCNN.from_checkpoint(path)` (and the GRU and windowed
 equivalents) and the evaluation workflow load it from that one file without the
 backbone checkpoints. The manifest still records the parents for provenance.
+
+### Amputee fusion training
+
+Amputee runs train only the fusion models (FusionCNN and FusionGRU). They use
+two entry points:
+
+- `train/fusion_train_amputee.py` (single-window)
+- `train/fusion_windows_train_amputee.py` (windowed)
+
+The amputee models in `models/fusion_*_amputee_model.py` contain their own IMU
+and MMG CNN backbones. These train from scratch with the fusion head, so no
+standalone runs are needed first. Optuna searches the IMU backbone, MMG
+backbone, fusion head and optimiser together.
+
+One run trains every data type in turn (`type1`, then `type2`), giving four
+Optuna studies and four models per input mode. Training always starts a new
+run and stops at the first failure. Each type follows the same lifecycle as
+above, with its own split and 5-class balanced loss weights. The checkpoint
+copies are named `checkpoints/best_<model-key>_A003_<type>.pt`, for example
+`best_fusion_cnn_amputee_A003_type1.pt`. The full run artifacts are under
+`results/training/<run-id>/`.
+
+For amputee runs, `--n-trials` counts **only trials that actually train**.
+Some randomly sampled MMG backbone geometries do not fit the 40×125 wavelet
+input. These are discarded straight away and redrawn without using the trial
+budget. As a safety cap, the search stops after 20 × `--n-trials` draws in
+total. The progress bar and the final
+`Trials: N trained, M invalid geometries redrawn` line report both counts.
 
 ---
 
@@ -377,6 +425,10 @@ python main.py --test --same-volunteer-id 13
 # Evaluate single-window models trained on a 2/8 volunteer split
 python main.py --test --input-mode single_window \
     --train-volunteer-count 2 --test-volunteer-count 8
+
+# Amputee A003: train FusionCNN + FusionGRU on type1 then type2, then evaluate all 4
+python main.py --amputee-id 3 --train --test --input-mode single_window --n-trials 30
+python main.py --amputee-id A003 --train --test --input-mode windowed
 ```
 
 | Argument | Default | Purpose |
@@ -384,8 +436,10 @@ python main.py --test --input-mode single_window \
 | `--train`, `--test` | — | Train and/or evaluate; at least one is required |
 | `--same-volunteer-id` | — | Train and test on one volunteer (e.g. `13` or `N013`) |
 | `--train-volunteer-count`, `--test-volunteer-count` | `5`, `5` | Volunteer-level split; cannot be combined with `--same-volunteer-id` |
+| `--amputee-id` | — | Use one amputee from `data/amputee` (e.g. `3` or `A003`). Runs fusion models on every data type in turn; cannot be combined with the volunteer options |
 | `--input-mode` | `windowed` | `windowed` keeps the 4 windows in each sample; `single_window` makes every window a sample |
-| `--model-target` | `standalone` | `standalone` IMU and MMG CNNs, or `fusion` CNN and GRU fusion models |
+| `--model-target` | `standalone` | `standalone` IMU and MMG CNNs, or `fusion` CNN and GRU fusion models. Amputee runs are always `fusion`; passing `standalone` with `--amputee-id` is an error |
+| `--n-trials` | entry point default | Optuna trial budget for each trained model (default 100 for standalone, 50 for fusion). Amputee runs count only trials that train |
 | `--seed`, `--test-fraction`, `--just-states-ratio`, `--total-budget-gb` | `42`, `0.10`, `1.05`, `10.0` | Split settings; `--test` only finds models trained with the same seed, test fraction and just-states ratio. The memory budget is ignored when matching |
 | `--batch-size` | `32` | Initial data-loader batch size |
 
@@ -438,10 +492,25 @@ Each evaluation writes to
 
 | File | Content |
 |------|---------|
-| `confusion_matrix_<model>.png` | One figure per model: 7×7 matrix over all test samples, rows normalised to % of the true class |
+| `confusion_matrix_<model>.png` | One figure per model: class×class matrix over all test samples (7×7, or 5×5 for amputee data), rows normalised to % of the true class |
 | `transition_accuracy.png` | Both models' accuracy per transition marker (`100m`, `50m`, `0`, `50`, `100`) as grouped bars with sample counts; `just_states` samples are excluded |
-| `metrics.json` | Run IDs, checkpoint hashes, accuracy, macro-F1, balanced accuracy, confusion matrices and per-marker accuracy |
+| `metrics.json` | Run IDs, checkpoint hashes, class names, accuracy, macro-F1, balanced accuracy, confusion matrices and per-marker accuracy |
 | `predictions.csv` | Test metadata with the true label and each model's prediction |
+
+### Amputee evaluation
+
+`--amputee-id ... --test` evaluates four models: FusionCNN and FusionGRU for
+each data type. Each type is scored on its own test split. Before loading any
+data, it checks that all four trained models exist. If any are missing, it
+lists them and prints the `python main.py --train ...` command, without
+creating an output folder. Results go to
+`results/evaluation/fusion__<input-mode>__amputee-A003__<timestamp>/`:
+
+| Path | Content |
+|------|---------|
+| `type1/`, `type2/` | The per-type files listed above (`confusion_matrix_*.png`, `transition_accuracy.png`, `metrics.json`, `predictions.csv`) |
+| `summary.csv`, `summary.json` | Accuracy, balanced accuracy and macro-F1 for every type × model, with run IDs |
+| `summary_metrics.png` | Those three metrics as grouped bars per type and model |
 
 ### Best-trial report
 

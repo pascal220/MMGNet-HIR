@@ -13,7 +13,7 @@ from typing import Optional, Union, cast
 import numpy as np
 import pandas as pd
 
-from file_parser import FileMetadata, FileNameParser
+from file_parser import AmputeeFileNameParser, FileMetadata, FileNameParser
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,16 @@ class RegistryColumns:
     ARRAY_NBYTES = "array_nbytes"
     RESIDENT_BYTES = "resident_bytes"
     FOLDER = "folder"
+    # Amputee registries only (absent from healthy registries).
+    DATA_TYPE = "data_type"
+    SOURCE_CLASS = "source_class"
+
+
+# Amputee-only columns that ride along on pairs and sample tables when present.
+OPTIONAL_PAIR_COLUMNS: tuple[str, ...] = (
+    RegistryColumns.DATA_TYPE,
+    RegistryColumns.SOURCE_CLASS,
+)
 
 
 CLASS_TO_LABEL: dict[str, int] = {
@@ -51,6 +61,14 @@ CLASS_TO_LABEL: dict[str, int] = {
 }
 
 LABEL_TO_CLASS: dict[int, str] = {v: k for k, v in CLASS_TO_LABEL.items()}
+
+# Amputee data has no stair classes; labels 0-4 match CLASS_TO_LABEL.
+AMPUTEE_CLASS_TO_LABEL: dict[str, int] = {
+    name: label for name, label in CLASS_TO_LABEL.items() if label <= 4
+}
+AMPUTEE_LABEL_TO_CLASS: dict[int, str] = {
+    v: k for k, v in AMPUTEE_CLASS_TO_LABEL.items()
+}
 
 # The only transition markers allowed in the transitions folder.
 VALID_TRANSITION_VALUES: frozenset[str] = frozenset({"100m", "50m", "0", "50", "100"})
@@ -86,11 +104,12 @@ def build_modality_pairs(df: pd.DataFrame) -> pd.DataFrame:
     comparable.
     """
     col = RegistryColumns
+    optional = [c for c in OPTIONAL_PAIR_COLUMNS if c in df.columns]
     if df.empty:
         return pd.DataFrame(
             columns=[
                 PairColumns.PAIR_KEY, col.VOLUNTEER_ID, col.CLASS_LABEL,
-                col.TRANSITION_INFO, col.FOLDER, PairColumns.SAMPLES,
+                col.TRANSITION_INFO, col.FOLDER, *optional, PairColumns.SAMPLES,
                 PairColumns.IMU_PATH, PairColumns.MMG_PATH,
                 PairColumns.PAIR_BYTES,
             ]
@@ -103,6 +122,10 @@ def build_modality_pairs(df: pd.DataFrame) -> pd.DataFrame:
         + "|" + work[col.TRANSITION_INFO].fillna(NO_TRANSITION_KEY).astype(str)
         + "|" + work[col.FOLDER].astype(str)
     )
+    # Several amputee filename classes share one label (e.g. walk_to_stand ->
+    # stand), so the source class is needed to keep their recordings apart.
+    if col.SOURCE_CLASS in work.columns:
+        work[PairColumns.PAIR_KEY] += "|" + work[col.SOURCE_CLASS].astype(str)
 
     duplicated = work.duplicated([PairColumns.PAIR_KEY, col.MODALITY])
     if duplicated.any():
@@ -138,6 +161,7 @@ def build_modality_pairs(df: pd.DataFrame) -> pd.DataFrame:
             col.CLASS_LABEL: imu[col.CLASS_LABEL],
             col.TRANSITION_INFO: imu[col.TRANSITION_INFO],
             col.FOLDER: imu[col.FOLDER],
+            **{column: imu[column] for column in optional},
             PairColumns.SAMPLES: imu[col.SAMPLES],
             PairColumns.IMU_PATH: imu[col.FILE_PATH],
             PairColumns.MMG_PATH: mmg[col.FILE_PATH],
@@ -196,8 +220,11 @@ def explode_pairs_to_samples(pairs: pd.DataFrame) -> pd.DataFrame:
     # Every sample of a file is the same size, so this division is exact.
     per_sample = pairs[PairColumns.PAIR_BYTES].to_numpy(dtype=np.int64) // counts
 
+    columns = SAMPLE_TABLE_COLUMNS + [
+        c for c in OPTIONAL_PAIR_COLUMNS if c in pairs.columns
+    ]
     samples = (
-        pairs[SAMPLE_TABLE_COLUMNS]
+        pairs[columns]
         .loc[pairs.index.repeat(counts)]
         .reset_index(drop=True)
     )
@@ -256,6 +283,13 @@ class DatasetRegistry:
     def __init__(self, parser: Optional[FileNameParser] = None):
         self._parser = parser or FileNameParser()
         self._df: Optional[pd.DataFrame] = None
+
+    # Sample-table columns that define a stratum of the transitions split.
+    TRANSITION_STRATA_KEYS: tuple[str, ...] = (
+        RegistryColumns.VOLUNTEER_ID,
+        RegistryColumns.CLASS_LABEL,
+        RegistryColumns.TRANSITION_INFO,
+    )
 
     # ------------------------------------------------------------------
     # Public API
@@ -484,11 +518,7 @@ class DatasetRegistry:
 
         samples = build_sample_table(candidates)
         rng = np.random.default_rng(seed)
-        strata_keys = [
-            RegistryColumns.VOLUNTEER_ID,
-            RegistryColumns.CLASS_LABEL,
-            RegistryColumns.TRANSITION_INFO,
-        ]
+        strata_keys = list(self.TRANSITION_STRATA_KEYS)
         train_positions: list[int] = []
         test_positions: list[int] = []
 
@@ -619,7 +649,7 @@ class DatasetRegistry:
 
     @staticmethod
     def _metadata_to_record(metadata: FileMetadata, folder_tag: str) -> dict:
-        return {
+        record = {
             RegistryColumns.FILE_PATH: metadata.file_path,
             RegistryColumns.VOLUNTEER_ID: metadata.volunteer_id,
             RegistryColumns.MODALITY: metadata.modality,
@@ -628,6 +658,11 @@ class DatasetRegistry:
             RegistryColumns.TRANSITION_INFO: metadata.transition_point,
             RegistryColumns.FOLDER: folder_tag,
         }
+        if metadata.data_type is not None:
+            record[RegistryColumns.DATA_TYPE] = metadata.data_type
+        if metadata.source_class is not None:
+            record[RegistryColumns.SOURCE_CLASS] = metadata.source_class
+        return record
 
     @staticmethod
     def _read_array_info(file_path: Path) -> Optional[dict]:
@@ -676,3 +711,101 @@ class DatasetRegistry:
             if column in df.columns:
                 df[column] = df[column].astype(dtype)
         return df
+
+# ---------------------------------------------------------------------------
+# Amputee registry
+# ---------------------------------------------------------------------------
+
+def normalize_amputee_id(amputee_id: Union[int, str]) -> str:
+    """Return a canonical amputee identifier such as ``A003``."""
+    if isinstance(amputee_id, (int, np.integer)):
+        if amputee_id < 0:
+            raise ValueError("Amputee number must be non-negative.")
+        return f"A{int(amputee_id):03d}"
+
+    if not isinstance(amputee_id, str):
+        raise TypeError("amputee_id must be an integer or string.")
+
+    value = amputee_id.strip().upper()
+    if value.isdigit():
+        return f"A{int(value):03d}"
+    if value.startswith("A") and value[1:].isdigit():
+        return f"A{int(value[1:]):03d}"
+    raise ValueError(
+        f"Invalid amputee ID '{amputee_id}'. Use an integer or an ID such as A003."
+    )
+
+
+def normalize_data_type(data_type: Union[int, str]) -> str:
+    """Return a canonical recording type such as ``type1``."""
+    if isinstance(data_type, (int, np.integer)):
+        if data_type < 1:
+            raise ValueError("Data type number must be positive.")
+        return f"type{int(data_type)}"
+
+    if not isinstance(data_type, str):
+        raise TypeError("data_type must be an integer or string.")
+
+    value = data_type.strip().lower()
+    if value.startswith("type"):
+        value = value[len("type"):]
+    if value.isdigit() and int(value) >= 1:
+        return f"type{int(value)}"
+    raise ValueError(
+        f"Invalid data type '{data_type}'. Use an integer or a value such as type1."
+    )
+
+
+class AmputeeDatasetRegistry(DatasetRegistry):
+    """Registry for amputee recordings.
+
+    Amputee files carry a recording type and use ``A``-prefixed IDs. The
+    transitions split additionally stratifies on the filename class, so
+    the aliased "stand" recordings (standin_to_stand, walk_to_stand) each
+    reach the test set.
+    """
+
+    TRANSITION_STRATA_KEYS: tuple[str, ...] = (
+        RegistryColumns.VOLUNTEER_ID,
+        RegistryColumns.CLASS_LABEL,
+        RegistryColumns.SOURCE_CLASS,
+        RegistryColumns.TRANSITION_INFO,
+    )
+
+    def __init__(self, parser: Optional[FileNameParser] = None):
+        super().__init__(parser or AmputeeFileNameParser())
+
+    @staticmethod
+    def normalize_volunteer_id(volunteer_id: Union[int, str]) -> str:
+        return normalize_amputee_id(volunteer_id)
+
+    def build_type_registries(
+        self,
+        folder_1: Union[str, Path],
+        folder_2: Union[str, Path],
+        data_type: Union[int, str],
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Build both folder registries restricted to one recording type.
+
+        Types are independent datasets, so rows of other types are dropped
+        straight after scanning and never reach a split.
+        """
+        data_type = normalize_data_type(data_type)
+        df_1, df_2 = self.build_dual_folder(folder_1, folder_2)
+        filtered = []
+        for tag, df in (("transitions", df_1), ("just_states", df_2)):
+            if df.empty or RegistryColumns.DATA_TYPE not in df.columns:
+                raise ValueError(f"No amputee {tag} files were found.")
+            available = sorted(df[RegistryColumns.DATA_TYPE].dropna().unique())
+            subset = df[df[RegistryColumns.DATA_TYPE] == data_type]
+            if subset.empty:
+                raise ValueError(
+                    f"No amputee {tag} files of {data_type}; available "
+                    f"types: {available}"
+                )
+            filtered.append(subset.reset_index(drop=True))
+        logger.info(
+            "Amputee %s registry: %d transitions files, %d just_states files",
+            data_type, len(filtered[0]), len(filtered[1]),
+        )
+        return filtered[0], filtered[1]

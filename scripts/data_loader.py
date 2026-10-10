@@ -12,7 +12,7 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Callable, Literal, Sequence, TypeVar, cast
 
 import pandas as pd
 import torch
@@ -21,18 +21,24 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dataset_registry import (
+    AMPUTEE_LABEL_TO_CLASS,
+    AmputeeDatasetRegistry,
     DatasetRegistry,
     LABEL_TO_CLASS,
     RegistryColumns,
     SampleColumns,
     build_sample_table,
     exclude_samples,
+    normalize_amputee_id,
+    normalize_data_type,
     sample_bytes,
 )
 from datasets import SOURCE_FILE, ModalityTensors, SingleModalityDataset
+from device_utils import release_cuda_memory
 from memory_manager import MemoryBudget, plan_resident_set
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 InputMode = Literal["single_window", "windowed"]
 ModelTarget = Literal["standalone", "fusion"]
@@ -40,11 +46,18 @@ WINDOW_INDEX_COLUMN = "window_index"
 ALL_WINDOWS = "all"
 IMU_SOURCE_FILE = "imu_source_file"
 MMG_SOURCE_FILE = "mmg_source_file"
+AMPUTEE_DATA_ROOT = Path("data/amputee")
+AMPUTEE_DATA_TYPES: tuple[str, ...] = ("type1", "type2")
 
 
 @dataclass(frozen=True)
 class ExperimentConfig:
-    """Configuration for one reproducible volunteer-based experiment."""
+    """Configuration for one reproducible volunteer-based experiment.
+
+    Setting ``amputee_id`` (with ``data_type``) selects the amputee setup:
+    one amputee's recordings of a single type, split within that amputee
+    exactly like ``same_volunteer_id``.
+    """
 
     same_volunteer_id: int | str | None = None
     train_volunteer_count: int = 8
@@ -54,11 +67,20 @@ class ExperimentConfig:
     test_fraction: float = 0.10
     just_states_ratio: float = 1.05
     batch_size: int = 32
+    amputee_id: int | str | None = None
+    data_type: int | str | None = None
 
     @property
     def setup(self) -> str:
         """Return the derived experiment mode retained for artifact compatibility."""
+        if self.amputee_id is not None:
+            return "amputee"
         return "same_volunteer" if self.same_volunteer_id is not None else "separate_volunteers"
+
+    @property
+    def label_to_class(self) -> dict[int, str]:
+        """Class names of the labels this experiment's data can contain."""
+        return AMPUTEE_LABEL_TO_CLASS if self.setup == "amputee" else LABEL_TO_CLASS
 
     def validate(self) -> None:
         """Validate configuration values before scanning or loading data."""
@@ -70,6 +92,15 @@ class ExperimentConfig:
             raise ValueError("just_states_ratio must be positive.")
         if self.batch_size < 1:
             raise ValueError("batch_size must be a positive integer.")
+        if self.amputee_id is not None:
+            if self.same_volunteer_id is not None:
+                raise ValueError("amputee_id and same_volunteer_id are mutually exclusive.")
+            if self.data_type is None:
+                raise ValueError("data_type is required when amputee_id is set.")
+            normalize_amputee_id(self.amputee_id)
+            normalize_data_type(self.data_type)
+        elif self.data_type is not None:
+            raise ValueError("data_type is only valid together with amputee_id.")
 
 
 @dataclass(frozen=True)
@@ -112,6 +143,15 @@ class ExperimentData:
     def test_mmg(self) -> ModalityTensors:
         return self.bundles["test_mmg"]
 
+    @property
+    def num_classes(self) -> int:
+        return len(self.config.label_to_class)
+
+    @property
+    def class_names(self) -> list[str]:
+        mapping = self.config.label_to_class
+        return [mapping[label] for label in sorted(mapping)]
+
 
 @dataclass(frozen=True)
 class PreparedData:
@@ -149,8 +189,12 @@ def _select_experiment_data(
     """Choose the transition and just_states samples for each split."""
     combined = pd.concat([folder_1_df, folder_2_df], ignore_index=True)
 
-    if config.same_volunteer_id is not None:
-        volunteer_id = registry.normalize_volunteer_id(config.same_volunteer_id)
+    # An amputee is split internally, exactly like a single volunteer.
+    within_subject_id = (
+        config.amputee_id if config.setup == "amputee" else config.same_volunteer_id
+    )
+    if within_subject_id is not None:
+        volunteer_id = registry.normalize_volunteer_id(within_subject_id)
         trans_train, trans_test = registry.split_transitions_by_fraction(
             combined,
             volunteer_id,
@@ -249,12 +293,16 @@ def _build_loaders(
     return loaders
 
 
-def _log_class_distribution(name: str, samples: pd.DataFrame) -> None:
+def _log_class_distribution(
+    name: str,
+    samples: pd.DataFrame,
+    label_to_class: dict[int, str] = LABEL_TO_CLASS,
+) -> None:
     counts = samples.groupby(RegistryColumns.CLASS_LABEL).size().sort_index()
     logger.info(
         "%s samples per class: %s",
         name,
-        {LABEL_TO_CLASS[cast(int, label)]: int(value) for label, value in counts.items()},
+        {label_to_class[cast(int, label)]: int(value) for label, value in counts.items()},
     )
 
 
@@ -326,6 +374,70 @@ def prepare_experiment_data(
         folder_1="data/transitions",
         folder_2="data/just_states",
     )
+    return _load_experiment(registry, folder_1_df, folder_2_df, config)
+
+
+def amputee_experiment_config(
+    amputee_id: int | str,
+    data_type: int | str,
+    total_budget_gb: float = 24.0,
+    seed: int = 42,
+    test_fraction: float = 0.10,
+    just_states_ratio: float = 1.10,
+    batch_size: int = 32,
+) -> ExperimentConfig:
+    """Return the validated config of one amputee experiment with normalised IDs."""
+    config = ExperimentConfig(
+        amputee_id=normalize_amputee_id(amputee_id),
+        data_type=normalize_data_type(data_type),
+        total_budget_gb=total_budget_gb,
+        seed=seed,
+        test_fraction=test_fraction,
+        just_states_ratio=just_states_ratio,
+        batch_size=batch_size,
+    )
+    config.validate()
+    return config
+
+
+def prepare_amputee_experiment_data(
+    amputee_id: int | str,
+    data_type: int | str,
+    total_budget_gb: float = 24.0,
+    seed: int = 42,
+    test_fraction: float = 0.10,
+    just_states_ratio: float = 1.10,
+    batch_size: int = 32,
+    data_root: str | Path = AMPUTEE_DATA_ROOT,
+) -> ExperimentData:
+    """Load one amputee recording type with the same-volunteer split.
+
+    Types are separate datasets: only files of ``data_type`` are scanned
+    into the split, so the two types never share a sample or a frame.
+    Labels use the five amputee classes (see ``AMPUTEE_LABEL_TO_CLASS``).
+    Tensor geometry matches ``prepare_experiment_data``.
+    """
+    config = amputee_experiment_config(
+        amputee_id, data_type, total_budget_gb, seed, test_fraction, just_states_ratio, batch_size,
+    )
+
+    root = Path(data_root)
+    registry = AmputeeDatasetRegistry()
+    folder_1_df, folder_2_df = registry.build_type_registries(
+        folder_1=root / "transitions",
+        folder_2=root / "just_states",
+        data_type=cast(str, config.data_type),
+    )
+    return _load_experiment(registry, folder_1_df, folder_2_df, config)
+
+
+def _load_experiment(
+    registry: DatasetRegistry,
+    folder_1_df: pd.DataFrame,
+    folder_2_df: pd.DataFrame,
+    config: ExperimentConfig,
+) -> ExperimentData:
+    """Select, budget and load the resident tensors for one experiment."""
     selected = _select_experiment_data(registry, folder_1_df, folder_2_df, config)
 
     budget = MemoryBudget(total_budget_gb=config.total_budget_gb)
@@ -357,6 +469,8 @@ def prepare_experiment_data(
         config.setup, config.seed, list(selected.train_volunteer_ids),
         list(selected.test_volunteer_ids),
     )
+    if config.setup == "amputee":
+        logger.info("Amputee data type: %s", config.data_type)
 
     bundles = _build_bundles(train_samples, test_samples)
     resident = sum(bundle.nbytes for bundle in bundles.values())
@@ -371,8 +485,8 @@ def prepare_experiment_data(
     _log_split_summary("Train", requested_train, train_samples)
     _log_split_summary("Test", requested_test, test_samples)
     logger.info("Total loaded: %d samples | %s", len(train_samples) + len(test_samples), _format_bytes(resident))
-    _log_class_distribution("Train", train_samples)
-    _log_class_distribution("Test", test_samples)
+    _log_class_distribution("Train", train_samples, config.label_to_class)
+    _log_class_distribution("Test", test_samples, config.label_to_class)
     for name in ("train_imu", "train_mmg"):
         bundle = bundles[name]
         logger.info(
@@ -538,3 +652,37 @@ def prepare_training_data(
     if mode == "windowed":
         return prepare_windowed_inputs(experiment, model_target=model_target)
     return prepare_single_window_inputs(experiment, model_target=model_target)
+
+
+def run_per_amputee_type(
+    amputee_id: int | str,
+    input_mode: str,
+    action: Callable[[PreparedData], _T],
+    *,
+    model_target: str = "fusion",
+    data_types: Sequence[str] = AMPUTEE_DATA_TYPES,
+    **data_kwargs: Any,
+) -> dict[str, _T]:
+    """Run ``action`` on each amputee data type in turn.
+
+    The types are independent datasets: each is loaded, split and prepared on
+    its own, passed to ``action``, and released before the next type is loaded,
+    so only one type is resident at a time. An exception stops the remaining
+    types. ``data_kwargs`` are forwarded to ``prepare_amputee_experiment_data``.
+    """
+    results: dict[str, _T] = {}
+    for data_type in data_types:
+        data_type = normalize_data_type(data_type)
+        logger.info(
+            "Amputee %s, %s: preparing %s %s data.",
+            normalize_amputee_id(amputee_id), data_type, input_mode, model_target,
+        )
+        prepared = prepare_training_data(
+            prepare_amputee_experiment_data(amputee_id, data_type, **data_kwargs),
+            input_mode=input_mode,
+            model_target=model_target,
+        )
+        results[data_type] = action(prepared)
+        del prepared
+        release_cuda_memory()
+    return results

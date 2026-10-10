@@ -240,7 +240,9 @@ def create_run_artifacts(
             raise FileNotFoundError(f"Cannot resume missing run directory: {run_dir}")
     else:
         experiment = prepared.experiment.config
-        if experiment.setup == "same_volunteer":
+        if experiment.setup == "amputee":
+            data_tag = f"amputee-{_slug(str(experiment.amputee_id))}-{_slug(str(experiment.data_type))}"
+        elif experiment.setup == "same_volunteer":
             volunteer = _slug(str(experiment.same_volunteer_id))
             data_tag = f"same-{volunteer}"
         else:
@@ -434,7 +436,9 @@ def _descriptive_checkpoint_alias(
     final_accuracy: float,
 ) -> Path:
     """Append date, training-volunteer tag, and final accuracy to an alias."""
-    if experiment.setup == "same_volunteer":
+    if experiment.setup == "amputee":
+        volunteer_tag = f"V{experiment.amputee_id}-{experiment.data_type}"
+    elif experiment.setup == "same_volunteer":
         volunteer_tag = f"V{experiment.same_volunteer_id}"
     else:
         volunteer_tag = f"V{experiment.train_volunteer_count}"
@@ -648,7 +652,7 @@ def run_training_experiment(
             "model_target": prepared.model_target,
             "input_shapes": [list(tensor.shape[1:]) for tensor in input_tensors],
             "num_classes": num_classes,
-            "label_mapping": LABEL_TO_CLASS,
+            "label_mapping": getattr(prepared.experiment.config, "label_to_class", LABEL_TO_CLASS),
             "total_parameters": sum(parameter.numel() for parameter in best_model.parameters()),
             "trainable_parameters": sum(
                 parameter.numel() for parameter in best_model.parameters() if parameter.requires_grad

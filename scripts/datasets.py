@@ -23,6 +23,7 @@ from torch.utils.data import Dataset
 from dataset_registry import (
     LABEL_TO_CLASS,
     MODALITY_PATH_COLUMN,
+    OPTIONAL_PAIR_COLUMNS,
     RegistryColumns,
     SampleColumns,
 )
@@ -149,6 +150,10 @@ class ModalityTensors:
                 SOURCE_SAMPLE_INDEX: samples[SampleColumns.SAMPLE_INDEX],
             }
         )[METADATA_COLUMNS]
+        # Amputee samples also record their recording type and filename class.
+        for column in OPTIONAL_PAIR_COLUMNS:
+            if column in samples.columns:
+                metadata[column] = samples[column].to_numpy()
 
         bundle = cls(
             modality=modality, data=data, labels=labels, metadata=metadata

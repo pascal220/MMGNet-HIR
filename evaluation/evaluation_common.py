@@ -26,7 +26,13 @@ from torch.utils.data import DataLoader, TensorDataset
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from data_loader import PreparedData
-from dataset_registry import LABEL_TO_CLASS, DatasetRegistry, RegistryColumns
+from dataset_registry import (
+    LABEL_TO_CLASS,
+    DatasetRegistry,
+    RegistryColumns,
+    normalize_amputee_id,
+    normalize_data_type,
+)
 from device_utils import resolve_device
 from run_selection import (
     DEFAULT_ARTIFACT_ROOT,
@@ -112,8 +118,10 @@ def compute_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     metadata: pd.DataFrame,
+    labels: Sequence[int] | None = None,
 ) -> dict[str, Any]:
-    counts = confusion_matrix(y_true, y_pred, labels=sorted(LABEL_TO_CLASS))
+    labels = sorted(LABEL_TO_CLASS) if labels is None else list(labels)
+    counts = confusion_matrix(y_true, y_pred, labels=labels)
     return {
         "test_rows": int(len(y_true)),
         "accuracy": float((y_true == y_pred).mean()),
@@ -125,7 +133,12 @@ def compute_metrics(
     }
 
 
-def _plot_confusion_matrix(percent: np.ndarray, title: str, path: Path) -> None:
+def _plot_confusion_matrix(
+    percent: np.ndarray,
+    title: str,
+    path: Path,
+    class_names: Sequence[str] = CLASS_NAMES,
+) -> None:
     figure = Figure(figsize=(8, 7), constrained_layout=True)
     axes = figure.subplots()
     image = axes.imshow(percent, cmap="Blues", vmin=0, vmax=100)
@@ -138,9 +151,9 @@ def _plot_confusion_matrix(percent: np.ndarray, title: str, path: Path) -> None:
                     column, row, f"{value:.1f}", ha="center", va="center",
                     color="white" if value > 50 else "black", fontsize=9,
                 )
-    ticks = range(len(CLASS_NAMES))
-    axes.set_xticks(ticks, CLASS_NAMES, rotation=45, ha="right")
-    axes.set_yticks(ticks, CLASS_NAMES)
+    ticks = range(len(class_names))
+    axes.set_xticks(ticks, class_names, rotation=45, ha="right")
+    axes.set_yticks(ticks, class_names)
     axes.set_xlabel("Predicted class")
     axes.set_ylabel("True class")
     axes.set_title(title)
@@ -179,7 +192,12 @@ def _plot_transition_accuracy(
 
 def _output_dir(prepared: PreparedData, output_root: str | Path) -> Path:
     config = prepared.experiment.config
-    if config.same_volunteer_id is not None:
+    if getattr(config, "amputee_id", None) is not None:
+        data_tag = (
+            f"amputee-{normalize_amputee_id(config.amputee_id)}-"
+            f"{normalize_data_type(config.data_type)}"
+        )
+    elif config.same_volunteer_id is not None:
         data_tag = f"same-{DatasetRegistry.normalize_volunteer_id(config.same_volunteer_id)}"
     else:
         data_tag = (
@@ -193,10 +211,19 @@ def _output_dir(prepared: PreparedData, output_root: str | Path) -> Path:
 
 def _data_title(prepared: PreparedData) -> str:
     config = prepared.experiment.config
+    if getattr(config, "amputee_id", None) is not None:
+        return (
+            f"Amputee {normalize_amputee_id(config.amputee_id)} "
+            f"({normalize_data_type(config.data_type)})"
+        )
     if config.same_volunteer_id is not None:
         return f"Volunteer {DatasetRegistry.normalize_volunteer_id(config.same_volunteer_id)}"
     volunteers = sorted(prepared.test_metadata[RegistryColumns.VOLUNTEER_ID].unique())
     return f"Unseen volunteers {', '.join(volunteers)}"
+
+
+def _label_to_class(prepared: PreparedData) -> dict[int, str]:
+    return getattr(prepared.experiment.config, "label_to_class", LABEL_TO_CLASS)
 
 
 def evaluate_models(
@@ -205,12 +232,14 @@ def evaluate_models(
     *,
     artifact_root: str | Path = DEFAULT_ARTIFACT_ROOT,
     output_root: str | Path = DEFAULT_OUTPUT_ROOT,
+    output_dir: str | Path | None = None,
     device: str = "auto",
     batch_size: int = 128,
 ) -> dict[str, Any]:
     """Evaluate every model in ``specs`` on the test split and save plots and metrics.
 
-    All models must be available; otherwise nothing is evaluated.
+    All models must be available; otherwise nothing is evaluated. Outputs go to
+    ``output_dir`` when given, else to a new timestamped folder in ``output_root``.
     """
     runs: dict[str, TrainedRun] = {}
     missing: list[str] = []
@@ -226,9 +255,16 @@ def evaluate_models(
     torch_device = resolve_device(device)
     y_true = prepared.y_test.cpu().numpy()
     metadata = prepared.test_metadata.reset_index(drop=True)
-    output_dir = _output_dir(prepared, output_root)
+    if output_dir is None:
+        output_dir = _output_dir(prepared, output_root)
+    else:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     data_title = _data_title(prepared)
     mode = f"{prepared.input_mode}, {prepared.model_target}"
+    label_to_class = _label_to_class(prepared)
+    labels = sorted(label_to_class)
+    class_names = [label_to_class[label] for label in labels]
 
     predictions = metadata.copy()
     predictions["y_true"] = y_true
@@ -239,7 +275,7 @@ def evaluate_models(
         y_pred = _predict(model, spec.inputs, torch_device, batch_size)
         predictions[f"pred_{spec.label}"] = y_pred
 
-        metrics = compute_metrics(y_true, y_pred, metadata)
+        metrics = compute_metrics(y_true, y_pred, metadata, labels)
         models[spec.label] = {
             "model_key": spec.model_key,
             "run_id": run.run_id,
@@ -249,8 +285,9 @@ def evaluate_models(
         }
         _plot_confusion_matrix(
             np.asarray(metrics["confusion_matrix_row_percent"]),
-            f"{spec.label} confusion matrix: {data_title}\n({mode}, run {run.run_id})",
+            f"{spec.label} confusion matrix: {data_title}\n({mode})\nrun {run.run_id}",
             output_dir / f"confusion_matrix_{spec.label}.png",
+            class_names,
         )
         logger.info(
             "%s (%s): accuracy=%.4f macro_f1=%.4f | per marker: %s",
@@ -269,6 +306,7 @@ def evaluate_models(
         "input_mode": prepared.input_mode,
         "model_target": prepared.model_target,
         "experiment_config": asdict(prepared.experiment.config),
+        "class_names": class_names,
         "test_volunteers": sorted(metadata[RegistryColumns.VOLUNTEER_ID].unique()),
         "models": models,
     }
