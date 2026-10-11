@@ -21,6 +21,7 @@ import torch.optim as optim
 import optuna
 from optuna.pruners  import MedianPruner
 from optuna.samplers import TPESampler
+from optuna_early_stop import PlateauStop
 
 import numpy as np
 from sklearn.metrics import f1_score
@@ -934,6 +935,8 @@ class FusionGRUWindowTuner:
         storage: str | None = None,
         study_name: str | None = None,
         load_if_exists: bool = False,
+        early_stop_patience: int | None = None,
+        early_stop_min_delta: float = 1e-3,
     ) -> FusionGRUWindow:
         """
         Run the Optuna hyperparameter search.
@@ -942,6 +945,8 @@ class FusionGRUWindowTuner:
             n_trials     : maximum number of trials
             timeout      : optional hard stop in seconds (default None)
             show_progress: display Optuna progress bar
+            early_stop_patience : stop after this many trials without a
+                                  best-value gain of early_stop_min_delta
 
         Returns:
             FusionGRUWindow model built with the best found hyperparameters
@@ -968,13 +973,23 @@ class FusionGRUWindowTuner:
             f"  |  device={self.device}\n"
         )
 
+        plateau = (
+            None if early_stop_patience is None
+            else PlateauStop(early_stop_patience, early_stop_min_delta)
+        )
         self.study.optimize(
             self._objective,
             n_trials         = n_trials,
             timeout          = timeout,
             show_progress_bar= show_progress,
             gc_after_trial   = True,
+            callbacks        = [plateau] if plateau else None,
         )
+        if plateau and plateau.triggered:
+            print(
+                f"[FusionGRUWindowTuner] Early stop: no improvement in the last "
+                f"{early_stop_patience} trials."
+            )
 
         # ── Report results ──────────────────────────────────────────────────
         best          = self.study.best_trial

@@ -53,6 +53,8 @@ class TrainingRunConfig:
 
     n_trials: int = 100
     timeout: int | None = None
+    early_stop_patience: int | None = None
+    early_stop_min_delta: float = 1e-3
     artifact_root: str = "results/training"
     run_label: str | None = None
     resume_run_id: str | None = None
@@ -71,6 +73,10 @@ class TrainingRunConfig:
             raise ValueError("n_trials must be at least 1.")
         if self.timeout is not None and self.timeout <= 0:
             raise ValueError("timeout must be positive or None.")
+        if self.early_stop_patience is not None and self.early_stop_patience < 1:
+            raise ValueError("early_stop_patience must be at least 1 or None.")
+        if self.early_stop_min_delta < 0:
+            raise ValueError("early_stop_min_delta must be non-negative.")
         if not 0 < self.val_fraction < 1:
             raise ValueError("val_fraction must be between 0 and 1.")
         if self.final_refit_epochs is not None and self.final_refit_epochs < 1:
@@ -552,6 +558,15 @@ def run_training_experiment(
         },
     )
     storage = journal_storage(artifacts.study_journal)
+    # Only passed when enabled so tuners without early stopping keep working.
+    early_stop_kwargs = (
+        {}
+        if run_config.early_stop_patience is None
+        else {
+            "early_stop_patience": run_config.early_stop_patience,
+            "early_stop_min_delta": run_config.early_stop_min_delta,
+        }
+    )
     tuner.run(
         n_trials=run_config.n_trials,
         timeout=run_config.timeout,
@@ -559,6 +574,7 @@ def run_training_experiment(
         storage=storage,
         study_name=artifacts.run_id,
         load_if_exists=bool(run_config.resume_run_id),
+        **early_stop_kwargs,
     )
     study: optuna.Study = tuner.study
     if study is None:
@@ -692,6 +708,8 @@ def run_training_experiment(
             "requested_additional_trials": run_config.n_trials,
             "completed_trials_total": len(study.trials),
             "timeout_seconds": run_config.timeout,
+            "early_stop_patience": run_config.early_stop_patience,
+            "early_stop_min_delta": run_config.early_stop_min_delta,
             "sampler": f"TPESampler(seed={run_config.seed})",
             "pruner": "MedianPruner(n_startup_trials=5,n_warmup_steps=10,interval_steps=1)",
             "search_space": {

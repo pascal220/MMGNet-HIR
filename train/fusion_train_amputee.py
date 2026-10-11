@@ -31,7 +31,8 @@ MODELS = (
 def train_fusion_amputee_type(
     prepared: PreparedData,
     *,
-    n_trials: int = 50,
+    n_trials: int = 100,
+    early_stop_patience: int | None = 20,
     timeout: int | None = None,
     artifact_root: str = "results/training",
     run_label: str | None = None,
@@ -42,7 +43,8 @@ def train_fusion_amputee_type(
     """Tune and refit FusionCNN then FusionGRU on one prepared amputee data type."""
     return train_amputee_type(
         prepared, MODELS, INPUT_MODE,
-        n_trials=n_trials, timeout=timeout, artifact_root=artifact_root,
+        n_trials=n_trials, early_stop_patience=early_stop_patience, timeout=timeout,
+        artifact_root=artifact_root,
         run_label=run_label, checkpoint_dir=checkpoint_dir,
         show_progress=show_progress, device=device,
     )
@@ -51,7 +53,8 @@ def train_fusion_amputee_type(
 def train_fusion_amputee(
     amputee_id: int | str,
     *,
-    n_trials: int = 50,
+    n_trials: int = 100,
+    early_stop_patience: int | None = 20,
     timeout: int | None = None,
     artifact_root: str = "results/training",
     run_label: str | None = None,
@@ -72,7 +75,8 @@ def train_fusion_amputee(
         INPUT_MODE,
         lambda prepared: train_fusion_amputee_type(
             prepared,
-            n_trials=n_trials, timeout=timeout, artifact_root=artifact_root,
+            n_trials=n_trials, early_stop_patience=early_stop_patience, timeout=timeout,
+            artifact_root=artifact_root,
             run_label=run_label, checkpoint_dir=checkpoint_dir,
             show_progress=show_progress, device=device,
         ),

@@ -175,7 +175,8 @@ def main() -> int:
         default=None,
         help=(
             "Optuna trial budget for each trained model. Defaults to each entry "
-            "point's own budget (100 for standalone models, 50 for fusion models)."
+            "point's own budget (100 trials; fusion models also stop early "
+            "after 20 trials without improvement)."
         ),
     )
     parser.add_argument(

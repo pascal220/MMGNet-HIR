@@ -39,7 +39,8 @@ def train_amputee_type(
     models: Sequence[AmputeeModel],
     input_mode: str,
     *,
-    n_trials: int = 50,
+    n_trials: int = 100,
+    early_stop_patience: int | None = 20,
     timeout: int | None = None,
     artifact_root: str = "results/training",
     run_label: str | None = None,
@@ -49,7 +50,9 @@ def train_amputee_type(
 ) -> dict[str, Any]:
     """Tune and refit ``models`` in order on one prepared amputee data type.
 
-    ``n_trials`` is the Optuna trial budget of each model. A copy of every
+    ``n_trials`` is the Optuna trial budget of each model; the search ends early
+    after ``early_stop_patience`` trials without improvement (None disables it).
+    A copy of every
     final checkpoint is written to ``checkpoint_dir`` with the amputee and
     data type in its name. Test tensors are never read.
     """
@@ -75,6 +78,7 @@ def train_amputee_type(
             trainer_factory=model.trainer_cls,
             config=TrainingRunConfig(
                 n_trials=n_trials,
+                early_stop_patience=early_stop_patience,
                 timeout=timeout,
                 artifact_root=artifact_root,
                 run_label=run_label,

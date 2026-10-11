@@ -24,6 +24,7 @@ import torch.optim as optim
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from optuna.trial import TrialState
+from optuna_early_stop import PlateauStop
 from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -644,8 +645,13 @@ class AmputeeFusionTuner:
         storage: Any = None,
         study_name: str | None = None,
         load_if_exists: bool = False,
+        early_stop_patience: int | None = None,
+        early_stop_min_delta: float = 1e-3,
     ) -> nn.Module:
         """Search until ``n_trials`` candidates have been trained, or ``timeout``.
+
+        With ``early_stop_patience`` the search also ends once that many trained
+        trials in a row fail to beat the best value by ``early_stop_min_delta``.
 
         Sampled backbones that cannot fit the input are rejected before any
         training and redrawn without using the budget. Pruned trials (median
@@ -686,17 +692,27 @@ class AmputeeFusionTuner:
             ):
                 study.stop()
 
+        plateau = (
+            None if early_stop_patience is None
+            else PlateauStop(early_stop_patience, early_stop_min_delta, INVALID_GEOMETRY_ATTR)
+        )
         try:
             self.study.optimize(
                 self._objective,
                 n_trials=None,
                 timeout=timeout,
-                callbacks=[stop_at_budget],
+                callbacks=[stop_at_budget, *([plateau] if plateau else [])],
                 show_progress_bar=False,
                 gc_after_trial=True,
             )
         finally:
             progress.close()
+
+        if plateau and plateau.triggered:
+            print(
+                f"[{self.NAME}] Early stop after {counts['trained']} trained trials: "
+                f"no improvement in the last {early_stop_patience}."
+            )
 
         if counts["trained"] < n_trials and counts["trained"] + counts["redrawn"] >= max_attempts:
             print(

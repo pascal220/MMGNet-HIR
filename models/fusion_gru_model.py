@@ -29,6 +29,7 @@ import torch.optim as optim
 import optuna
 from optuna.pruners  import MedianPruner
 from optuna.samplers import TPESampler
+from optuna_early_stop import PlateauStop
 
 import numpy as np
 from sklearn.metrics import f1_score
@@ -739,6 +740,8 @@ class FusionGRUTuner:
         storage: str | None = None,
         study_name: str | None = None,
         load_if_exists: bool = False,
+        early_stop_patience: int | None = None,
+        early_stop_min_delta: float = 1e-3,
     ) -> FusionGRU:
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -762,13 +765,23 @@ class FusionGRUTuner:
             f"  |  device={self.device}\n"
         )
 
+        plateau = (
+            None if early_stop_patience is None
+            else PlateauStop(early_stop_patience, early_stop_min_delta)
+        )
         self.study.optimize(
             self._objective,
             n_trials          = n_trials,
             timeout           = timeout,
             show_progress_bar = show_progress,
             gc_after_trial    = True,
+            callbacks         = [plateau] if plateau else None,
         )
+        if plateau and plateau.triggered:
+            print(
+                f"[FusionGRUTuner] Early stop: no improvement in the last "
+                f"{early_stop_patience} trials."
+            )
 
         best              = self.study.best_trial
         self._best_params = best.params

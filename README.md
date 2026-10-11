@@ -457,7 +457,7 @@ python main.py --amputee-id A003 --train --test --input-mode windowed
 | `--amputee-id` | — | Use one amputee from `data/amputee` (e.g. `3` or `A003`). Runs fusion models on every data type in turn; cannot be combined with the volunteer options |
 | `--input-mode` | `windowed` | `windowed` keeps the 4 windows in each sample; `single_window` makes every window a sample |
 | `--model-target` | `standalone` | `standalone` IMU and MMG CNNs, or `fusion` CNN and GRU fusion models. Amputee runs are always `fusion`; passing `standalone` with `--amputee-id` is an error |
-| `--n-trials` | entry point default | Optuna trial budget for each trained model (default 100 for standalone, 50 for fusion). Amputee runs count only trials that train |
+| `--n-trials` | entry point default | Optuna trial budget for each trained model (default 100; fusion models also stop early after 20 trials without improvement). Amputee runs count only trials that train |
 | `--seed`, `--test-fraction`, `--just-states-ratio`, `--total-budget-gb` | `42`, `0.10`, `1.05`, `10.0` | Split settings; `--test` only finds models trained with the same seed, test fraction and just-states ratio. The memory budget is ignored when matching |
 | `--batch-size` | `32` | Initial data-loader batch size |
 
