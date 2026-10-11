@@ -1,0 +1,17 @@
+In Command Prompt (without administrative permissions)
+
+1. mount the drive through:
+- "C:\Program Files\SSHFS-Win\bin\ssh.exe" ffp116@ic-s7m0kc20734.dept.ic.ac.uk
+You will need to retype your user name, and then your Imperial SSH password.
+
+2. you should now be logged in to the machine. Use command:
+- exit to leave. 
+
+3. use the following command to mount and connect back to the workstation:
+- "C:\Program Files\SSHFS-Win\bin\sshfs-win.exe" svc \sshfs\%USERNAME%=ffp116@ic-s7m0kc20734.dept.ic.ac.uk X: %USERNAME% -o umask=000,create_file_umask=0117,create_dir_umask=0007,ServerAliveInterval=30
+You will either be asked to enter your password or you will just see a blinking cursor. In both cases, you need to enter your password. Whatever is typed into the terminal is not hidden. The password will be visible to anyone looking. 
+
+4. if successful, those two lines will show up:
+">> OK"
+">> The service sshfs has been started."
+You now have READ and WRITE permission through Microsoft Explorer to work on the workstation folders.
