@@ -1,0 +1,251 @@
+{
+  "evaluated_at_utc": "2026-10-11T19:48:09.545649+00:00",
+  "input_mode": "single_window",
+  "model_target": "fusion",
+  "experiment_config": {
+    "same_volunteer_id": null,
+    "train_volunteer_count": 8,
+    "test_volunteer_count": 2,
+    "total_budget_gb": 10.0,
+    "seed": 42,
+    "test_fraction": 0.1,
+    "just_states_ratio": 1.05,
+    "batch_size": 32,
+    "amputee_id": "A003",
+    "data_type": "type2"
+  },
+  "class_names": [
+    "sit",
+    "stand",
+    "walking",
+    "sit_to_stand",
+    "stand_to_sit"
+  ],
+  "test_volunteers": [
+    "A003"
+  ],
+  "models": {
+    "FusionCNN": {
+      "model_key": "fusion_cnn_amputee",
+      "run_id": "fusion_cnn_amputee__single_window__amputee-A003-type2__20261011T182225Z",
+      "checkpoint": "results/training/fusion_cnn_amputee__single_window__amputee-A003-type2__20261011T182225Z/fusion_cnn_amputee__single_window__amputee-A003-type2__20261011T182225Z.pt",
+      "checkpoint_sha256": "c515be3afd9eac40d122c0f37207099517aea94abb3ce659895d826cc6d3b465",
+      "test_rows": 2536,
+      "accuracy": 0.9755520504731862,
+      "macro_f1": 0.9717449598107262,
+      "balanced_accuracy": 0.9702163893628611,
+      "confusion_matrix_counts": [
+        [
+          349,
+          3,
+          0,
+          8,
+          8
+        ],
+        [
+          1,
+          1168,
+          3,
+          0,
+          16
+        ],
+        [
+          0,
+          12,
+          231,
+          0,
+          1
+        ],
+        [
+          1,
+          0,
+          0,
+          367,
+          0
+        ],
+        [
+          2,
+          6,
+          0,
+          1,
+          359
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          94.83695652173913,
+          0.8152173913043478,
+          0.0,
+          2.1739130434782608,
+          2.1739130434782608
+        ],
+        [
+          0.08417508417508418,
+          98.31649831649831,
+          0.25252525252525254,
+          0.0,
+          1.3468013468013469
+        ],
+        [
+          0.0,
+          4.918032786885246,
+          94.67213114754098,
+          0.0,
+          0.4098360655737705
+        ],
+        [
+          0.2717391304347826,
+          0.0,
+          0.0,
+          99.72826086956522,
+          0.0
+        ],
+        [
+          0.5434782608695652,
+          1.6304347826086956,
+          0.0,
+          0.2717391304347826,
+          97.55434782608695
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 248,
+          "correct": 240,
+          "accuracy": 0.967741935483871
+        },
+        "50m": {
+          "n": 248,
+          "correct": 247,
+          "accuracy": 0.9959677419354839
+        },
+        "0": {
+          "n": 248,
+          "correct": 247,
+          "accuracy": 0.9959677419354839
+        },
+        "50": {
+          "n": 248,
+          "correct": 246,
+          "accuracy": 0.9919354838709677
+        },
+        "100": {
+          "n": 248,
+          "correct": 242,
+          "accuracy": 0.9758064516129032
+        }
+      }
+    },
+    "FusionGRU": {
+      "model_key": "fusion_gru_amputee",
+      "run_id": "fusion_gru_amputee__single_window__amputee-A003-type2__20261011T192133Z",
+      "checkpoint": "results/training/fusion_gru_amputee__single_window__amputee-A003-type2__20261011T192133Z/fusion_gru_amputee__single_window__amputee-A003-type2__20261011T192133Z.pt",
+      "checkpoint_sha256": "634c8af8028443bf6f6ab703c1448b8bdc750a052d931fa34b604843f96040e3",
+      "test_rows": 2536,
+      "accuracy": 0.9617507886435331,
+      "macro_f1": 0.957561416112273,
+      "balanced_accuracy": 0.9587549287121633,
+      "confusion_matrix_counts": [
+        [
+          340,
+          9,
+          0,
+          11,
+          8
+        ],
+        [
+          2,
+          1153,
+          12,
+          4,
+          17
+        ],
+        [
+          0,
+          6,
+          238,
+          0,
+          0
+        ],
+        [
+          4,
+          5,
+          0,
+          359,
+          0
+        ],
+        [
+          2,
+          13,
+          0,
+          4,
+          349
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          92.3913043478261,
+          2.4456521739130435,
+          0.0,
+          2.989130434782609,
+          2.1739130434782608
+        ],
+        [
+          0.16835016835016836,
+          97.05387205387206,
+          1.0101010101010102,
+          0.3367003367003367,
+          1.430976430976431
+        ],
+        [
+          0.0,
+          2.459016393442623,
+          97.54098360655738,
+          0.0,
+          0.0
+        ],
+        [
+          1.0869565217391304,
+          1.358695652173913,
+          0.0,
+          97.55434782608695,
+          0.0
+        ],
+        [
+          0.5434782608695652,
+          3.532608695652174,
+          0.0,
+          1.0869565217391304,
+          94.83695652173913
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 248,
+          "correct": 235,
+          "accuracy": 0.9475806451612904
+        },
+        "50m": {
+          "n": 248,
+          "correct": 247,
+          "accuracy": 0.9959677419354839
+        },
+        "0": {
+          "n": 248,
+          "correct": 247,
+          "accuracy": 0.9959677419354839
+        },
+        "50": {
+          "n": 248,
+          "correct": 243,
+          "accuracy": 0.9798387096774194
+        },
+        "100": {
+          "n": 248,
+          "correct": 236,
+          "accuracy": 0.9516129032258065
+        }
+      }
+    }
+  }
+}
