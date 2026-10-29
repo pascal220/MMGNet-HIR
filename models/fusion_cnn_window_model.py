@@ -35,6 +35,7 @@ from early_stopping import EarlyStopping
 from backbone_finetune import (
     BACKBONE_LR_SCALE_RANGE,
     DEFAULT_BACKBONE_LR_SCALE,
+    DEFAULT_BACKBONE_WEIGHT_DECAY,
     build_param_groups,
 )
 
@@ -372,7 +373,8 @@ class FusionCNNWindowTrainer:
 
         # ── Optimiser (head at full LR, backbones at a reduced LR) ──────────
         trainable_params = build_param_groups(
-            self.model, self.cfg["lr"], self.cfg["backbone_lr_scale"]
+            self.model, self.cfg["lr"], self.cfg["backbone_lr_scale"],
+            self.cfg.get("backbone_weight_decay", DEFAULT_BACKBONE_WEIGHT_DECAY),
         )
         print(
             f"[FusionCNNWindowTrainer] Trainable parameters: "

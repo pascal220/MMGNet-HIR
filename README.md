@@ -284,7 +284,8 @@ same split, selected and verified as described in
 stops and prints the command that trains it. The backbones are fine-tuned
 together with the fusion head (BatchNorm and dropout in training mode), at the
 head learning rate multiplied by `backbone_lr_scale`, which Optuna searches in
-`[0.01, 0.3]`. The saved fusion checkpoint is self-contained and the original
+`[0.01, 0.1]`. The backbones use a fixed weight decay of 0 (`backbone_weight_decay`)
+so the pretrained weights are not pulled towards zero. The saved fusion checkpoint is self-contained and the original
 IMU and MMG runs are never modified, so they remain available for comparison.
 Train the standalone models first. Each saved fusion checkpoint is
 self-contained: it stores the backbone architectures and weights alongside the

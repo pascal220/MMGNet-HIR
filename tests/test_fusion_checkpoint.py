@@ -106,10 +106,12 @@ class FusionCheckpointTests(unittest.TestCase):
                 trainer = trainer_class(
                     model,
                     {"optimizer": "Adam", "lr": 1e-2, "backbone_lr_scale": 0.1,
-                     "device": "cpu"},
+                     "weight_decay": 1e-4, "device": "cpu"},
                 )
                 head_group, backbone_group = trainer.optimizer.param_groups
                 self.assertAlmostEqual(backbone_group["lr"], head_group["lr"] * 0.1)
+                self.assertEqual(backbone_group["weight_decay"], 0.0)
+                self.assertEqual(head_group["weight_decay"], 1e-4)
 
                 before = {
                     name: p.detach().clone()
