@@ -178,13 +178,16 @@ def _train_command(model_key: str, prepared: PreparedDataLike) -> str:
             f"--train-volunteer-count {config.train_volunteer_count} "
             f"--test-volunteer-count {config.test_volunteer_count}"
         )
-    return (
+    command = (
         f"python main.py --train {data} --input-mode {prepared.input_mode} "
         f"--model-target {target} --seed {config.seed} "
         f"--test-fraction {config.test_fraction} "
         f"--just-states-ratio {config.just_states_ratio} "
         f"--total-budget-gb {config.total_budget_gb}"
     )
+    if getattr(config, "label_subset", None) is not None:
+        command += " --binary-classifiers"
+    return command
 
 
 def _missing_run_message(
@@ -254,6 +257,32 @@ def _verify_trained_on_split(
         raise RunVerificationError(
             f"Run {run_id} was trained on samples that are in the current test set."
         )
+
+
+def verify_recorded_run(
+    run_id: str,
+    model_key: str,
+    manifest: Mapping[str, Any],
+    prepared: PreparedDataLike,
+) -> None:
+    """Check a manifest held outside its run folder was trained on this split.
+
+    Used for models stored inside a bundle: the embedded manifest must describe
+    the same split settings and training samples as ``prepared``, and none of
+    those samples may be in its test set.
+    """
+    differences = split_differences(
+        manifest["data"]["experiment_config"], _current_settings(prepared)
+    )
+    if differences:
+        changed = ", ".join(
+            f"{name}: trained={old!r}, now={new!r}" for name, (old, new) in differences.items()
+        )
+        raise RunVerificationError(
+            f"Run {run_id} was trained with other split settings ({changed}). "
+            f"Retrain with: {_train_command(model_key, prepared)}"
+        )
+    _verify_trained_on_split(run_id, model_key, manifest, prepared)
 
 
 def verify_run(run: TrainedRun, prepared: PreparedDataLike) -> None:

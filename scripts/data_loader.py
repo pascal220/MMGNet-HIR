@@ -69,6 +69,8 @@ class ExperimentConfig:
     batch_size: int = 32
     amputee_id: int | str | None = None
     data_type: int | str | None = None
+    # Amputee labels kept by a binary-classifier task; position i becomes label i.
+    label_subset: tuple[int, ...] | None = None
 
     @property
     def setup(self) -> str:
@@ -80,6 +82,11 @@ class ExperimentConfig:
     @property
     def label_to_class(self) -> dict[int, str]:
         """Class names of the labels this experiment's data can contain."""
+        if self.label_subset is not None:
+            return {
+                index: AMPUTEE_LABEL_TO_CLASS[label]
+                for index, label in enumerate(self.label_subset)
+            }
         return AMPUTEE_LABEL_TO_CLASS if self.setup == "amputee" else LABEL_TO_CLASS
 
     def validate(self) -> None:
@@ -101,6 +108,12 @@ class ExperimentConfig:
             normalize_data_type(self.data_type)
         elif self.data_type is not None:
             raise ValueError("data_type is only valid together with amputee_id.")
+        if self.label_subset is not None:
+            if self.amputee_id is None:
+                raise ValueError("label_subset is only valid together with amputee_id.")
+            unknown = set(self.label_subset) - set(AMPUTEE_LABEL_TO_CLASS)
+            if unknown or len(set(self.label_subset)) != len(self.label_subset):
+                raise ValueError(f"label_subset must hold distinct amputee labels: {self.label_subset}")
 
 
 @dataclass(frozen=True)

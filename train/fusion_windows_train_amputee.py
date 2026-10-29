@@ -18,7 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import fusion_cnn_window_amputee_model as cnn
 import fusion_gru_window_amputee_model as gru
-from amputee_train_common import DEFAULT_CHECKPOINT_DIR, AmputeeModel, train_amputee_type
+from amputee_train_common import (
+    DEFAULT_CHECKPOINT_DIR,
+    AmputeeModel,
+    train_amputee_type,
+    train_amputee_type_binary,
+)
 from data_loader import AMPUTEE_DATA_TYPES, PreparedData, run_per_amputee_type
 
 INPUT_MODE = "windowed"
@@ -80,6 +85,62 @@ def train_fusion_windows_amputee(
         amputee_id,
         INPUT_MODE,
         lambda prepared: train_fusion_windows_amputee_type(
+            prepared,
+            n_trials=n_trials, early_stop_patience=early_stop_patience, timeout=timeout,
+            artifact_root=artifact_root,
+            run_label=run_label, checkpoint_dir=checkpoint_dir,
+            show_progress=show_progress, device=device,
+        ),
+        data_types=data_types,
+        **data_kwargs,
+    )
+
+
+def train_fusion_windows_amputee_binary_type(
+    prepared: PreparedData,
+    *,
+    n_trials: int = 100,
+    early_stop_patience: int | None = 20,
+    timeout: int | None = None,
+    artifact_root: str = "results/training",
+    run_label: str | None = None,
+    checkpoint_dir: str | None = DEFAULT_CHECKPOINT_DIR,
+    show_progress: bool = True,
+    device: str = "auto",
+) -> dict[str, Any]:
+    """Train the binary-classifier set of windowed FusionCNN then FusionGRU on one data type."""
+    return train_amputee_type_binary(
+        prepared, MODELS, INPUT_MODE,
+        n_trials=n_trials, early_stop_patience=early_stop_patience, timeout=timeout,
+        artifact_root=artifact_root,
+        run_label=run_label, checkpoint_dir=checkpoint_dir,
+        show_progress=show_progress, device=device,
+    )
+
+
+def train_fusion_windows_amputee_binary(
+    amputee_id: int | str,
+    *,
+    n_trials: int = 100,
+    early_stop_patience: int | None = 20,
+    timeout: int | None = None,
+    artifact_root: str = "results/training",
+    run_label: str | None = None,
+    checkpoint_dir: str | None = DEFAULT_CHECKPOINT_DIR,
+    show_progress: bool = True,
+    device: str = "auto",
+    data_types: Sequence[str] = AMPUTEE_DATA_TYPES,
+    **data_kwargs: Any,
+) -> dict[str, dict[str, Any]]:
+    """Train the binary-classifier sets of both windowed fusion models on every data type.
+
+    ``n_trials`` applies to each task model. ``data_kwargs`` are forwarded to
+    ``prepare_amputee_experiment_data``.
+    """
+    return run_per_amputee_type(
+        amputee_id,
+        INPUT_MODE,
+        lambda prepared: train_fusion_windows_amputee_binary_type(
             prepared,
             n_trials=n_trials, early_stop_patience=early_stop_patience, timeout=timeout,
             artifact_root=artifact_root,

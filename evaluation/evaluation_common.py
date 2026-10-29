@@ -164,6 +164,7 @@ def _plot_transition_accuracy(
     results: dict[str, dict[str, dict[str, Any]]],
     title: str,
     path: Path,
+    show_counts: bool = True,
 ) -> None:
     labels = list(results)
     counts = next(iter(results.values()))
@@ -180,7 +181,10 @@ def _plot_transition_accuracy(
         ]
         bars = axes.bar(x + (index - (len(labels) - 1) / 2) * width, values, width, label=label)
         axes.bar_label(bars, fmt="%.1f", padding=2, fontsize=8)
-    axes.set_xticks(x, [f"{m}\n(n={counts[m]['n']})" for m in TRANSITION_ORDER])
+    # Rows per marker differ between models that see different subsets of the test set.
+    axes.set_xticks(
+        x, [f"{m}\n(n={counts[m]['n']})" if show_counts else m for m in TRANSITION_ORDER],
+    )
     axes.set_xlabel("Transition marker")
     axes.set_ylabel("Accuracy (%)")
     axes.set_ylim(0, 110)

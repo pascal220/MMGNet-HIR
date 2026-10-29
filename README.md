@@ -314,6 +314,36 @@ copies are named `checkpoints/best_<model-key>_A003_<type>.pt`, for example
 `best_fusion_cnn_amputee_A003_type1.pt`. The full run artifacts are under
 `results/training/<run-id>/`.
 
+#### Binary classifiers (`--binary-classifiers`)
+
+With `--amputee-id ... --binary-classifiers`, the five-class models are
+**replaced** by sets of smaller task models. Without the flag nothing changes.
+Each task keeps only the rows of its classes from the same train/test split as
+the five-class model and relabels them `0..k-1` in the order below:
+
+| Task | Classes |
+|------|---------|
+| `sit_vs_sit_to_stand` | sit, sit_to_stand |
+| `sit_to_stand_vs_stand` | sit_to_stand, stand |
+| `stand_to_sit_vs_sit` | stand_to_sit, sit |
+| `stand_vs_walking` | stand, walking |
+| `stand_walking_stand_to_sit` | stand, walking, stand_to_sit (3-class) |
+
+Every task of every architecture and data type is optimised, refit and run
+exactly like a five-class model: its own validation holdout, Optuna study
+(`--n-trials` applies **per task model**, so a run is 5 tasks × 2 architectures
+× 2 types = 20 searches), balanced loss weights and run folder under
+`results/training/` (key `<model-key>-<task>`). The five models of one
+architecture and data type are then written to **one** bundle,
+`checkpoints/best_<model-key>_A003_<type>_binary.pt`, holding the weights,
+architecture config, class order and a copy of each run's manifest. The bundle
+is all that evaluation needs; the run folders are the audit trail of the
+searches.
+
+```bash
+python main.py --amputee-id A003 --train --test --binary-classifiers --input-mode windowed --n-trials 30
+```
+
 For amputee runs, `--n-trials` counts **only trials that actually train**.
 Some randomly sampled MMG backbone geometries do not fit the 40×125 wavelet
 input. These are discarded straight away and redrawn without using the trial
@@ -464,6 +494,7 @@ python main.py --amputee-id A003 --train --test --input-mode windowed
 | `--input-mode` | `windowed` | `windowed` keeps the 4 windows in each sample; `single_window` makes every window a sample |
 | `--model-target` | `standalone` | `standalone` IMU and MMG CNNs, or `fusion` CNN and GRU fusion models. Amputee runs are always `fusion`; passing `standalone` with `--amputee-id` is an error |
 | `--n-trials` | entry point default | Optuna trial budget for each trained model (default 100; fusion models also stop early after 20 trials without improvement). Amputee runs count only trials that train |
+| `--binary-classifiers` | off | Amputee only: train and test the five task models per architecture and data type instead of the five-class model; see [Binary classifiers](#binary-classifiers---binary-classifiers) |
 | `--seed`, `--test-fraction`, `--just-states-ratio`, `--total-budget-gb` | `42`, `0.10`, `1.05`, `10.0` | Split settings; `--test` only finds models trained with the same seed, test fraction and just-states ratio. The memory budget is ignored when matching |
 | `--batch-size` | `32` | Initial data-loader batch size |
 
@@ -540,6 +571,29 @@ creating an output folder. Results go to
 | `type1/`, `type2/` | The per-type files listed above (`confusion_matrix_*.png`, `transition_accuracy.png`, `metrics.json`, `predictions.csv`) |
 | `summary.csv`, `summary.json` | Accuracy, balanced accuracy and macro-F1 for every type × model, with run IDs |
 | `summary_metrics.png` | Those three metrics as grouped bars per type and model |
+
+#### Binary-classifier evaluation
+
+`--amputee-id ... --test --binary-classifiers` loads the bundle of each
+architecture and data type (all must exist before any data is loaded) and
+tests every task model on the sealed test rows of its own classes. Before
+predicting, each model's recorded training split is verified against the
+current data, so a model trained on other settings or on test samples is
+rejected. Results go to
+`results/evaluation/fusion__<input-mode>__amputee-A003__binary__<timestamp>/`:
+
+| Path | Content |
+|------|---------|
+| `type1/<model>/` | Per task: `confusion_matrix_<task>.png` and `predictions_<task>.csv`; plus `transition_accuracy.png` (per-marker accuracy of every task) and `metrics.json` (per-task metrics, run IDs and the `overall` block) |
+| `summary.csv`, `summary.json` | One row per type × model × task (accuracy, balanced accuracy, macro-F1, test rows) and an `OVERALL` row per type × model |
+| `summary_metrics.png` | The three metrics as grouped bars per task, with the overall bars, one panel per type and model |
+
+`OVERALL` is the unweighted mean of the task models' accuracy, balanced
+accuracy and macro-F1. `pooled_accuracy` (in `summary.csv` and `metrics.json`)
+is the share of correct predictions over all task models' test rows. A test row
+whose class belongs to several tasks is counted once per task. The task models
+are scored separately; the evaluation does not chain them into a five-class
+prediction.
 
 ### Best-trial report
 

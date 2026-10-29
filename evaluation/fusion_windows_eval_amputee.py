@@ -13,6 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import fusion_cnn_window_amputee_model as cnn
 import fusion_gru_window_amputee_model as gru
+from amputee_binary_evaluation_common import (
+    DEFAULT_CHECKPOINT_DIR,
+    BinarySpec,
+    evaluate_amputee_binary,
+)
 from amputee_evaluation_common import evaluate_amputee
 from data_loader import AMPUTEE_DATA_TYPES, PreparedData
 from evaluation_common import DEFAULT_OUTPUT_ROOT, ModelSpec, evaluate_models
@@ -21,6 +26,10 @@ from split_utils import validate_prepared_data
 
 INPUT_MODE = "windowed"
 MODEL_KEYS = (cnn.MODEL_KEY, gru.MODEL_KEY)
+BINARY_SPECS = (
+    BinarySpec("FusionCNN", cnn.MODEL_KEY, cnn.FusionCNNWindowAmputee.from_config),
+    BinarySpec("FusionGRU", gru.MODEL_KEY, gru.FusionGRUWindowAmputee.from_config),
+)
 
 
 def evaluate_fusion_windows_amputee_type(
@@ -63,5 +72,26 @@ def evaluate_fusion_windows_amputee(
     return evaluate_amputee(
         amputee_id, INPUT_MODE, evaluate_fusion_windows_amputee_type, MODEL_KEYS,
         artifact_root=artifact_root, output_root=output_root, device=device,
+        data_types=data_types, **data_kwargs,
+    )
+
+
+def evaluate_fusion_windows_amputee_binary(
+    amputee_id: int | str,
+    *,
+    checkpoint_dir: str | Path = DEFAULT_CHECKPOINT_DIR,
+    output_root: str = DEFAULT_OUTPUT_ROOT,
+    device: str = "auto",
+    data_types: Sequence[str] = AMPUTEE_DATA_TYPES,
+    **data_kwargs: Any,
+) -> dict[str, Any]:
+    """Evaluate the binary-classifier bundles of both windowed fusion models.
+
+    Every task model is tested per task and summarised overall. ``data_kwargs``
+    must match the settings the models were trained with.
+    """
+    return evaluate_amputee_binary(
+        amputee_id, INPUT_MODE, BINARY_SPECS,
+        checkpoint_dir=checkpoint_dir, output_root=output_root, device=device,
         data_types=data_types, **data_kwargs,
     )

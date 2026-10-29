@@ -13,9 +13,12 @@ from run_selection import ModelNotAvailableError, RunVerificationError
 sys.path.insert(0, str(Path(__file__).resolve().parent / "train"))
 
 from fusion_train import train_and_evaluate_fusion
-from fusion_train_amputee import train_fusion_amputee
+from fusion_train_amputee import train_fusion_amputee, train_fusion_amputee_binary
 from fusion_windows_train import train_and_evaluate_fusion_windows
-from fusion_windows_train_amputee import train_fusion_windows_amputee
+from fusion_windows_train_amputee import (
+    train_fusion_windows_amputee,
+    train_fusion_windows_amputee_binary,
+)
 from imu_cnn_train import train_and_evaluate_imu_cnn
 from imu_cnn_windows_train import train_and_evaluate_imu_cnn_windows
 from mmg_cnn_train import train_and_evaluate_mmg_cnn
@@ -24,9 +27,15 @@ from mmg_cnn_windows_train import train_and_evaluate_mmg_cnn_windows
 sys.path.insert(0, str(Path(__file__).resolve().parent / "evaluation"))
 
 from fusion_single_window_eval import evaluate_fusion_single_window
-from fusion_single_window_eval_amputee import evaluate_fusion_single_window_amputee
+from fusion_single_window_eval_amputee import (
+    evaluate_fusion_single_window_amputee,
+    evaluate_fusion_single_window_amputee_binary,
+)
 from fusion_windows_eval import evaluate_fusion_windows
-from fusion_windows_eval_amputee import evaluate_fusion_windows_amputee
+from fusion_windows_eval_amputee import (
+    evaluate_fusion_windows_amputee,
+    evaluate_fusion_windows_amputee_binary,
+)
 from standalone_single_window_eval import evaluate_standalone_single_window
 from standalone_windows_eval import evaluate_standalone_windows
 
@@ -113,11 +122,23 @@ def _run_stage(stage: str, action: Callable[[], object]) -> bool:
 
 
 def _run_amputee(args: argparse.Namespace, train_kwargs: dict[str, Any]) -> int:
-    """Train and/or evaluate the amputee fusion models on every data type in turn."""
+    """Train and/or evaluate the amputee fusion models on every data type in turn.
+
+    With ``--binary-classifiers`` the five-class models are replaced by the set
+    of binary/three-class task models.
+    """
     if args.input_mode == "windowed":
-        train, evaluate = train_fusion_windows_amputee, evaluate_fusion_windows_amputee
+        train, evaluate = (
+            (train_fusion_windows_amputee_binary, evaluate_fusion_windows_amputee_binary)
+            if args.binary_classifiers
+            else (train_fusion_windows_amputee, evaluate_fusion_windows_amputee)
+        )
     else:
-        train, evaluate = train_fusion_amputee, evaluate_fusion_single_window_amputee
+        train, evaluate = (
+            (train_fusion_amputee_binary, evaluate_fusion_single_window_amputee_binary)
+            if args.binary_classifiers
+            else (train_fusion_amputee, evaluate_fusion_single_window_amputee)
+        )
     data_kwargs = {
         "total_budget_gb": args.total_budget_gb,
         "seed": args.seed,
@@ -198,6 +219,17 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--binary-classifiers",
+        action="store_true",
+        help=(
+            "Amputee only: instead of one five-class model, tune, train and test "
+            "five task models per architecture and data type (sit vs sit_to_stand, "
+            "sit_to_stand vs stand, stand_to_sit vs sit, stand vs walking, and "
+            "stand/walking/stand_to_sit). The task models of one architecture are "
+            "saved as one bundle file. --n-trials applies to each task model."
+        ),
+    )
+    parser.add_argument(
         "--train",
         action="store_true",
         help="Run the selected training entry point(s).",
@@ -224,6 +256,8 @@ def main() -> int:
     if args.n_trials is not None and args.n_trials < 1:
         parser.error("--n-trials must be a positive integer")
     train_kwargs = {} if args.n_trials is None else {"n_trials": args.n_trials}
+    if args.binary_classifiers and args.amputee_id is None:
+        parser.error("--binary-classifiers requires --amputee-id")
 
     if args.amputee_id is not None:
         if (
