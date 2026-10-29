@@ -1,9 +1,10 @@
 # fusion_amputee_common.py
 # Shared building blocks for the end-to-end amputee fusion models.
 #
-# Unlike the healthy-volunteer fusion models, which freeze pre-trained IMU and
-# MMG backbones, the amputee fusion models build both backbones inside the
-# fusion model and train every parameter from scratch together with the head.
+# Unlike the healthy-volunteer fusion models, which start from pre-trained IMU
+# and MMG backbones and fine-tune them, the amputee fusion models build both
+# backbones inside the fusion model and train every parameter from scratch
+# together with the head.
 # Optuna therefore jointly searches:
 #   - the IMU backbone   (``imu_*`` parameters, the standalone IMU search space)
 #   - the MMG backbone   (``mmg_*`` parameters, the standalone MMG search space)

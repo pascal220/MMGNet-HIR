@@ -12,9 +12,10 @@
 #       -> Linear           (batch, num_classes)
 #       -> Softmax
 #
-# Both sub-model backbones are frozen.
+# Both sub-model backbones start from their pre-trained weights and are
+# fine-tuned with the head (backbone LR = head LR x backbone_lr_scale).
 # Optuna optimises: GRU hidden size, FC hidden size, FC dropout,
-#                   optimiser hyperparameters.
+#                   optimiser hyperparameters, backbone LR scale.
 #
 # References:
 #   IntentCNN  : Su et al., IEEE TNSRE 2019         (cnn_model.py)
@@ -39,6 +40,11 @@ from imu_cnn_model   import IntentCNN
 from mmg_cnn_model import LocomotionMMGCNN
 from device_utils import release_cuda_memory, resolve_device
 from early_stopping import EarlyStopping
+from backbone_finetune import (
+    BACKBONE_LR_SCALE_RANGE,
+    DEFAULT_BACKBONE_LR_SCALE,
+    build_param_groups,
+)
 
 # Optuna visualisation
 try:
@@ -54,14 +60,15 @@ except ImportError:
 
 
 # ============================================================================
-# Frozen Backbone Feature Extractor
+# Pre-trained Backbone Feature Extractor
 # ============================================================================
 
-class _FrozenBackbones(nn.Module):
+class _PretrainedBackbones(nn.Module):
     """
     Identical to the one in fusion_cnn_model.py.
-    Loads, freezes, and extracts GAP features from both pre-trained
-    sub-models, returning a concatenated (batch, C1+C2) feature vector.
+    Loads and extracts GAP features from both pre-trained sub-models,
+    returning a concatenated (batch, C1+C2) feature vector. The weights
+    stay trainable so the fusion model can fine-tune them.
 
     IntentCNN path:
         x_imu (batch, 6, 125)
@@ -143,14 +150,6 @@ class _FrozenBackbones(nn.Module):
         self.gap_1d = nn.AdaptiveAvgPool1d(output_size=1)
         self.gap_2d = nn.AdaptiveAvgPool2d(output_size=(1, 1))
 
-        self._freeze()
-
-    def _freeze(self):
-        for param in self.intent_backbone.parameters():
-            param.requires_grad = False
-        for param in self.gesture_backbone.parameters():
-            param.requires_grad = False
-
     @property
     def feature_dim(self) -> int:
         return self.c1 + self.c2
@@ -184,7 +183,8 @@ class FusionGRU(nn.Module):
             -> ReLU + Dropout
             -> Linear           (batch, num_classes)
 
-    Only the GRU and FC head are trained. Both backbones are frozen.
+    The GRU and FC head are trained from scratch; both backbones start from
+    their pre-trained weights and are fine-tuned with a reduced learning rate.
 
     Args:
         intent_cnn_path  : path to saved IntentCNN  .pt checkpoint
@@ -211,8 +211,8 @@ class FusionGRU(nn.Module):
 
         device = resolve_device(device)
 
-        # ── Frozen backbones ─────────────────────────────────────────────────
-        self.backbones = _FrozenBackbones(
+        # ── Pre-trained, fine-tunable backbones ──────────────────────────────
+        self.backbones = _PretrainedBackbones(
             intent_cnn_path, gesture_cnn_path, device, backbone_configs
         )
         feat_dim = self.backbones.feature_dim
@@ -315,12 +315,14 @@ class FusionGRUTrainer:
 
     DataLoader must yield (X_imu, X_cwt, y) 3-tuples.
     Uses ReduceLROnPlateau. Supports SGD and Adam.
-    Only GRU and FC head parameters are updated (backbones are frozen).
+    The GRU, FC head and backbones are updated; backbones use
+    ``lr * backbone_lr_scale``.
     """
 
     _DEFAULTS = dict(
         optimizer   = "Adam",
         lr          = 1e-3,
+        backbone_lr_scale = DEFAULT_BACKBONE_LR_SCALE,
         weight_decay= 1e-4,
         beta1       = 0.9,
         beta2       = 0.999,
@@ -350,10 +352,12 @@ class FusionGRUTrainer:
         )
         self.criterion = nn.CrossEntropyLoss(weight=loss_weights)
 
-        trainable = [p for p in self.model.parameters() if p.requires_grad]
+        trainable = build_param_groups(
+            self.model, self.cfg["lr"], self.cfg["backbone_lr_scale"]
+        )
         print(
             f"[FusionGRUTrainer] Trainable parameters: "
-            f"{sum(p.numel() for p in trainable):,}"
+            f"{sum(p.numel() for g in trainable for p in g['params']):,}"
         )
 
         opt_name = self.cfg.get("optimizer", "Adam")
@@ -397,7 +401,6 @@ class FusionGRUTrainer:
         training: bool,
     ) -> tuple[float, float, float]:
         self.model.train(training)
-        self.model.backbones.eval()
         total_loss = 0.0
         all_preds, all_labels = [], []
 
@@ -572,7 +575,7 @@ class FusionGRUTuner:
     Searches over:
         GRU hidden size, FC hidden size, FC dropout,
         optimiser (SGD or Adam),
-        batch size, ReduceLROnPlateau factor and patience.
+        batch size, ReduceLROnPlateau factor and patience, backbone LR scale.
 
     Usage:
         tuner      = FusionGRUTuner(train_loader, val_loader,
@@ -596,6 +599,7 @@ class FusionGRUTuner:
         adam_beta2   = (0.90, 0.9999),
         lr_factor    = (0.1, 0.9),
         lr_patience  = (5,   20),
+        backbone_lr_scale = BACKBONE_LR_SCALE_RANGE,
     )
 
     def __init__(
@@ -661,6 +665,8 @@ class FusionGRUTuner:
             "lr_factor", *self.search["lr_factor"])
         hyperparams["lr_patience"] = trial.suggest_int(
             "lr_patience", *self.search["lr_patience"])
+        hyperparams["backbone_lr_scale"] = trial.suggest_float(
+            "backbone_lr_scale", *self.search["backbone_lr_scale"], log=True)
 
         batch_size = trial.suggest_categorical(
             "batch_size", self.search["batch_size"]

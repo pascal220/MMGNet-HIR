@@ -12,8 +12,8 @@ from split_utils import validate_prepared_data
 from training_experiment import TrainingRunConfig, run_training_experiment
 
 NUM_CLASSES = 7
-FUSION_CNN_PATH = "checkpoints/best_fusion_cnn.pt"
-FUSION_GRU_PATH = "checkpoints/best_fusion_gru.pt"
+FUSION_CNN_PATH = "checkpoints/best_fusion_cnn_unfrozen.pt"
+FUSION_GRU_PATH = "checkpoints/best_fusion_gru_unfrozen.pt"
 
 
 def train_and_evaluate_fusion(
@@ -34,8 +34,9 @@ def train_and_evaluate_fusion(
 ):
     """Tune and refit single-window FusionCNN and FusionGRU models.
 
-    The frozen backbones are the latest IMU and MMG runs trained on this exact
-    split. Test tensors are deliberately not read; this function returns
+    The backbones are initialised from the latest IMU and MMG runs trained on
+    this exact split and fine-tuned with the head; those runs stay unchanged.
+    Test tensors are deliberately not read; this function returns
     validation-selection metadata and artifact paths.
     """
     validate_prepared_data(prepared, "single_window", "fusion")

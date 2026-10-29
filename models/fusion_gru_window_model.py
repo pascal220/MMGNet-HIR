@@ -2,10 +2,12 @@
 # Window-based Fusion GRU for multimodal IMU + MMG recognition
 #
 # Architecture:
-#   - Frozen IMU backbone (IntentCNNWindow)
-#   - Frozen MMG backbone (LocomotionMMGCNNWindow)
-#   - Trainable GRU fusion layer
-#   - Trainable FC classifier
+#   - Pre-trained IMU backbone (IntentCNNWindow), fine-tuned
+#   - Pre-trained MMG backbone (LocomotionMMGCNNWindow), fine-tuned
+#   - GRU fusion layer
+#   - FC classifier
+#
+# Backbones are trained at head LR x backbone_lr_scale.
 #
 # Amendments vs. original fusion_gru_model.py:
 #   - Input shapes: IMU (batch, 6, 125, 4), MMG (batch, 5, 40, 125, 4)
@@ -31,6 +33,11 @@ from imu_cnn_window_model import IntentCNNWindow
 from mmg_cnn_window_model import LocomotionMMGCNNWindow
 from device_utils import release_cuda_memory, resolve_device
 from early_stopping import EarlyStopping
+from backbone_finetune import (
+    BACKBONE_LR_SCALE_RANGE,
+    DEFAULT_BACKBONE_LR_SCALE,
+    build_param_groups,
+)
 
 # Optuna visualisation
 try:
@@ -46,12 +53,13 @@ except ImportError:
 
 
 # ============================================================================
-# Frozen Backbones (same as fusion_cnn_window_model.py)
+# Pre-trained Backbones (same as fusion_cnn_window_model.py)
 # ============================================================================
 
-class _FrozenBackbones(nn.Module):
+class _PretrainedBackbones(nn.Module):
     """
-    Loads frozen IMU and MMG backbones from pretrained checkpoints.
+    Loads IMU and MMG backbones from pretrained checkpoints. The weights stay
+    trainable so the fusion model can fine-tune them.
 
     Extracts features from both modalities and concatenates them.
 
@@ -99,10 +107,9 @@ class _FrozenBackbones(nn.Module):
         )
         if imu_ckpt is not None:
             self.imu_backbone.load_state_dict(imu_ckpt["model_state_dict"])
-        self.imu_backbone.eval()
 
-        # Freeze IMU backbone
-        for param in self.imu_backbone.parameters():
+        # The stand-alone classifier is not used for feature extraction
+        for param in self.imu_backbone.fc.parameters():
             param.requires_grad = False
 
         # ── Build MMG backbone ──────────────────────────────────────────────
@@ -120,10 +127,9 @@ class _FrozenBackbones(nn.Module):
         )
         if mmg_ckpt is not None:
             self.mmg_backbone.load_state_dict(mmg_ckpt["model_state_dict"])
-        self.mmg_backbone.eval()
 
-        # Freeze MMG backbone
-        for param in self.mmg_backbone.parameters():
+        # The stand-alone classifier is not used for feature extraction
+        for param in self.mmg_backbone.classifier.parameters():
             param.requires_grad = False
 
         # ── Compute feature dimensions ──────────────────────────────────────
@@ -140,7 +146,7 @@ class _FrozenBackbones(nn.Module):
         self.feature_dim = self.imu_feature_dim + self.mmg_feature_dim
 
         print(
-            f"[_FrozenBackbones] Loaded frozen backbones"
+            f"[_PretrainedBackbones] Loaded fine-tunable backbones"
             f"  |  IMU features: {self.imu_feature_dim}"
             f"  |  MMG features: {self.mmg_feature_dim}"
             f"  |  Total: {self.feature_dim}"
@@ -161,29 +167,28 @@ class _FrozenBackbones(nn.Module):
         Returns:
             fused_features : (batch, imu_feature_dim + mmg_feature_dim)
         """
-        with torch.no_grad():
-            # ── IMU features ────────────────────────────────────────────────
-            # Forward through: first_conv → window_pool → blocks → global_pool
-            imu_x = x_imu
-            imu_x = self.imu_backbone.first_conv(imu_x)
-            imu_x = self.imu_backbone.bn_first(imu_x)
-            imu_x = self.imu_backbone.relu(imu_x)
-            imu_x = self.imu_backbone.window_pool(imu_x)
-            imu_x = imu_x.squeeze(-1)
-            imu_x = self.imu_backbone.blocks(imu_x)
-            imu_x = self.imu_backbone.global_pool(imu_x)
-            imu_features = imu_x.squeeze(-1)  # (batch, imu_feature_dim)
+        # ── IMU features ────────────────────────────────────────────────────
+        # Forward through: first_conv → window_pool → blocks → global_pool
+        imu_x = x_imu
+        imu_x = self.imu_backbone.first_conv(imu_x)
+        imu_x = self.imu_backbone.bn_first(imu_x)
+        imu_x = self.imu_backbone.relu(imu_x)
+        imu_x = self.imu_backbone.window_pool(imu_x)
+        imu_x = imu_x.squeeze(-1)
+        imu_x = self.imu_backbone.blocks(imu_x)
+        imu_x = self.imu_backbone.global_pool(imu_x)
+        imu_features = imu_x.squeeze(-1)  # (batch, imu_feature_dim)
 
-            # ── MMG features ────────────────────────────────────────────────
-            # Forward through: first_conv → squeeze → conv_blocks → global_pool
-            mmg_x = x_mmg
-            mmg_x = self.mmg_backbone.first_conv(mmg_x)
-            mmg_x = self.mmg_backbone.bn_first(mmg_x)
-            mmg_x = self.mmg_backbone.relu(mmg_x)
-            mmg_x = mmg_x.squeeze(-1)
-            mmg_x = self.mmg_backbone.conv_blocks(mmg_x)
-            mmg_x = self.mmg_backbone.global_pool(mmg_x)
-            mmg_features = mmg_x.flatten(start_dim=1)  # (batch, mmg_feature_dim)
+        # ── MMG features ────────────────────────────────────────────────────
+        # Forward through: first_conv → squeeze → conv_blocks → global_pool
+        mmg_x = x_mmg
+        mmg_x = self.mmg_backbone.first_conv(mmg_x)
+        mmg_x = self.mmg_backbone.bn_first(mmg_x)
+        mmg_x = self.mmg_backbone.relu(mmg_x)
+        mmg_x = mmg_x.squeeze(-1)
+        mmg_x = self.mmg_backbone.conv_blocks(mmg_x)
+        mmg_x = self.mmg_backbone.global_pool(mmg_x)
+        mmg_features = mmg_x.flatten(start_dim=1)  # (batch, mmg_feature_dim)
 
         # ── Concatenate ─────────────────────────────────────────────────────
         fused = torch.cat([imu_features, mmg_features], dim=1)
@@ -196,15 +201,15 @@ class _FrozenBackbones(nn.Module):
 
 class FusionGRUWindow(nn.Module):
     """
-    Multimodal fusion model combining frozen IMU and MMG backbones with GRU.
+    Multimodal fusion model combining fine-tunable IMU and MMG backbones with GRU.
 
     Architecture:
-        Frozen IMU backbone → features
-        Frozen MMG backbone → features
+        Pre-trained IMU backbone → features
+        Pre-trained MMG backbone → features
         Concatenate
         Reshape to sequence: (batch, seq_len, feature_dim)
         Unidirectional GRU
-        Trainable FC head → classifier
+        FC head → classifier
 
     The GRU processes the concatenated features as a temporal sequence,
     allowing the model to learn temporal dependencies in the fused representation.
@@ -235,8 +240,8 @@ class FusionGRUWindow(nn.Module):
 
         device = resolve_device(device)
 
-        # ── Frozen backbones ────────────────────────────────────────────────
-        self.backbones = _FrozenBackbones(
+        # ── Pre-trained, fine-tunable backbones ─────────────────────────────
+        self.backbones = _PretrainedBackbones(
             imu_checkpoint, mmg_checkpoint, device, backbone_configs
         )
 
@@ -359,7 +364,9 @@ class FusionGRUWindowTrainer:
     """
     Manages training, evaluation, inference, and persistence of FusionGRUWindow.
 
-    Only the GRU and FC head are trainable; backbones remain frozen.
+    The GRU and FC head are trained from scratch; the backbones start from
+    their pre-trained weights and are fine-tuned at
+    ``lr * backbone_lr_scale``.
 
     Supported optimisers:
         'SGD'  : lr, momentum, weight_decay, lr_step_size, lr_decay
@@ -369,6 +376,7 @@ class FusionGRUWindowTrainer:
     _SGD_DEFAULTS = dict(
         optimizer    = "SGD",
         lr           = 0.01,
+        backbone_lr_scale = DEFAULT_BACKBONE_LR_SCALE,
         momentum     = 0.9,
         weight_decay = 0.0005,
         lr_decay     = 0.1,
@@ -380,6 +388,7 @@ class FusionGRUWindowTrainer:
     _ADAM_DEFAULTS = dict(
         optimizer    = "Adam",
         lr           = 1e-3,
+        backbone_lr_scale = DEFAULT_BACKBONE_LR_SCALE,
         weight_decay = 1e-4,
         beta1        = 0.9,
         beta2        = 0.999,
@@ -409,13 +418,13 @@ class FusionGRUWindowTrainer:
         )
         self.criterion = nn.CrossEntropyLoss(weight=loss_weights)
 
-        # ── Optimiser (only GRU + FC head parameters) ───────────────────────
-        trainable_params = [
-            p for p in self.model.parameters() if p.requires_grad
-        ]
+        # ── Optimiser (head at full LR, backbones at a reduced LR) ──────────
+        trainable_params = build_param_groups(
+            self.model, self.cfg["lr"], self.cfg["backbone_lr_scale"]
+        )
         print(
             f"[FusionGRUWindowTrainer] Trainable parameters: "
-            f"{sum(p.numel() for p in trainable_params):,}"
+            f"{sum(p.numel() for g in trainable_params for p in g['params']):,}"
         )
 
         opt_name = self.cfg.get("optimizer", "SGD")
@@ -466,7 +475,6 @@ class FusionGRUWindowTrainer:
             (mean_loss, accuracy, macro_f1)
         """
         self.model.train(training)
-        self.model.backbones.eval()
         total_loss = 0.0
         all_preds, all_labels = [], []
 
@@ -748,6 +756,7 @@ class FusionGRUWindowTuner:
         # Shared LR schedule
         lr_step_size   = (10, 40),
         lr_decay       = (0.05, 0.50),
+        backbone_lr_scale = BACKBONE_LR_SCALE_RANGE,
     )
 
     def __init__(
@@ -850,7 +859,10 @@ class FusionGRUWindowTuner:
                 ),
             )
 
-        # ── 4. Sample batch size ────────────────────────────────────────────
+        # ── 4. Sample backbone LR scale and batch size ──────────────────────
+        hyperparams["backbone_lr_scale"] = trial.suggest_float(
+            "backbone_lr_scale", *self.search["backbone_lr_scale"], log=True
+        )
         batch_size = trial.suggest_categorical(
             "batch_size", self.search["batch_size"]
         )

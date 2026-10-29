@@ -219,6 +219,8 @@ def normalize_training_params(
         raise ValueError(f"Unsupported optimizer in best trial: {optimizer!r}.")
 
     fixed = fixed_params or {}
+    if "backbone_lr_scale" in params:
+        normalized["backbone_lr_scale"] = float(params["backbone_lr_scale"])
     for key in ("lr_step_size", "lr_decay", "lr_factor", "lr_patience", "lr_min"):
         if key in params:
             normalized[key] = params[key]

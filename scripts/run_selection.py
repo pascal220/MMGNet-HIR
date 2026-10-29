@@ -1,6 +1,6 @@
 """Select trained runs whose recorded data split matches the prepared data.
 
-A run may only be reused (for evaluation, or as a frozen fusion backbone) when
+A run may only be reused (for evaluation, or as the initial fusion backbone) when
 it was trained on exactly the split held in memory; otherwise its "unseen" test
 samples may have been part of its training data.
 """
@@ -343,7 +343,7 @@ def require_trained_runs(
 
 
 def verify_parent_checkpoints(run: TrainedRun, prepared: PreparedDataLike) -> list[Path]:
-    """Return a fusion run's frozen parent checkpoints after checking they are unchanged."""
+    """Return a fusion run's parent checkpoints after checking they are unchanged."""
     paths: list[Path] = []
     for record in run.parent_checkpoints:
         path = Path(record["path"])

@@ -277,10 +277,15 @@ GRU searches are independent studies. Existing fixed checkpoint arguments are
 retained as compatibility aliases; the uniquely named artifact checkpoint is
 the authoritative model recorded in the manifest.
 
-Fusion entry points do not take backbone paths. They freeze the latest IMU and
-MMG runs of the same input mode that were trained on the same split, selected
-and verified as described in [Model selection](#model-selection). If either
-backbone is missing, training stops and prints the command that trains it.
+Fusion entry points do not take backbone paths. They initialise the fusion model
+from the latest IMU and MMG runs of the same input mode that were trained on the
+same split, selected and verified as described in
+[Model selection](#model-selection). If either backbone is missing, training
+stops and prints the command that trains it. The backbones are fine-tuned
+together with the fusion head (BatchNorm and dropout in training mode), at the
+head learning rate multiplied by `backbone_lr_scale`, which Optuna searches in
+`[0.01, 0.3]`. The saved fusion checkpoint is self-contained and the original
+IMU and MMG runs are never modified, so they remain available for comparison.
 Train the standalone models first. Each saved fusion checkpoint is
 self-contained: it stores the backbone architectures and weights alongside the
 fusion head, so `FusionCNN.from_checkpoint(path)` (and the GRU and windowed
@@ -502,7 +507,8 @@ For each model, `scripts/run_selection.py`:
 
 Both models in a comparison must be available. If either is missing,
 evaluation stops and prints the `python main.py --train ...` command that
-trains it. Fusion evaluation also re-verifies the frozen IMU and MMG backbones.
+trains it. Fusion evaluation also re-verifies that the IMU and MMG runs the
+fusion model was initialised from are unchanged.
 
 > The fingerprint is computed with pandas, so evaluate in the same environment
 > (package versions) that was used for training.

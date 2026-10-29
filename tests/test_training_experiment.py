@@ -293,7 +293,24 @@ class TrainingExperimentTests(unittest.TestCase):
         self.assertEqual(normalized["batch_size"], 64)
         self.assertEqual(normalized["epochs"], 13)
         self.assertNotIn("adam_lr", normalized)
+        self.assertNotIn("backbone_lr_scale", normalized)
 
+    def test_normalize_keeps_backbone_lr_scale(self) -> None:
+        normalized = normalize_training_params(
+            {
+                "optimizer": "Adam",
+                "batch_size": 64,
+                "adam_lr": 0.002,
+                "adam_wd": 0.0001,
+                "adam_beta1": 0.91,
+                "adam_beta2": 0.998,
+                "backbone_lr_scale": 0.05,
+            },
+            best_epoch=13,
+            class_weights=[1.0, 2.0],
+        )
+
+        self.assertEqual(normalized["backbone_lr_scale"], 0.05)
     def test_nested_pair_dataset_matches_window_fusion_trainers(self) -> None:
         first = torch.arange(6).reshape(3, 2)
         second = torch.arange(9).reshape(3, 3)

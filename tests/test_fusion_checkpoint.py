@@ -10,10 +10,10 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "models")]
 
-from fusion_cnn_model import FusionCNN
-from fusion_cnn_window_model import FusionCNNWindow
-from fusion_gru_model import FusionGRU
-from fusion_gru_window_model import FusionGRUWindow
+from fusion_cnn_model import FusionCNN, FusionCNNTrainer
+from fusion_cnn_window_model import FusionCNNWindow, FusionCNNWindowTrainer
+from fusion_gru_model import FusionGRU, FusionGRUTrainer
+from fusion_gru_window_model import FusionGRUWindow, FusionGRUWindowTrainer
 from imu_cnn_model import IntentCNN
 from imu_cnn_window_model import IntentCNNWindow
 from mmg_cnn_model import LocomotionMMGCNN
@@ -67,7 +67,77 @@ class FusionCheckpointTests(unittest.TestCase):
             expected = model.cpu()(*inputs)
             actual = loaded(*inputs)
         self.assertTrue(torch.equal(expected, actual))
-        self.assertFalse(any(p.requires_grad for p in loaded.backbones.parameters()))
+
+    def _fine_tuning_cases(self):
+        single = (
+            (IntentCNN(**SINGLE_IMU), SINGLE_IMU),
+            (LocomotionMMGCNN(**SINGLE_MMG), SINGLE_MMG),
+        )
+        window = (
+            (IntentCNNWindow(**WINDOW_IMU), WINDOW_IMU),
+            (LocomotionMMGCNNWindow(**WINDOW_MMG), WINDOW_MMG),
+        )
+        single_batch = (
+            (torch.randn(4, 6, 125), torch.randn(4, 5, 40, 125)),
+            torch.tensor([0, 1, 2, 3]),
+        )
+        window_batch = (
+            (torch.randn(4, 6, 125, 4), torch.randn(4, 5, 40, 125, 4)),
+            torch.tensor([0, 1, 2, 3]),
+        )
+        flat = lambda batch: (*batch[0], batch[1])
+        return [
+            (single, lambda a, b: FusionCNN(a, b, 7, 8), FusionCNNTrainer, [flat(single_batch)]),
+            (single, lambda a, b: FusionGRU(a, b, 7, gru_hidden=8, fc_hidden=8),
+             FusionGRUTrainer, [flat(single_batch)]),
+            (window, lambda a, b: FusionCNNWindow(a, b, 7, [8]),
+             FusionCNNWindowTrainer, [window_batch]),
+            (window, lambda a, b: FusionGRUWindow(a, b, 7, 8, fc_hidden_dims=[8]),
+             FusionGRUWindowTrainer, [window_batch]),
+        ]
+
+    def test_backbones_are_fine_tuned_with_a_reduced_learning_rate(self) -> None:
+        for parents, build, trainer_class, batches in self._fine_tuning_cases():
+            imu_path = _save_backbone(self.root / "imu.pt", *parents[0])
+            mmg_path = _save_backbone(self.root / "mmg.pt", *parents[1])
+            imu_bytes = Path(imu_path).read_bytes()
+            model = build(imu_path, mmg_path)
+            with self.subTest(model=type(model).__name__):
+                trainer = trainer_class(
+                    model,
+                    {"optimizer": "Adam", "lr": 1e-2, "backbone_lr_scale": 0.1,
+                     "device": "cpu"},
+                )
+                head_group, backbone_group = trainer.optimizer.param_groups
+                self.assertAlmostEqual(backbone_group["lr"], head_group["lr"] * 0.1)
+
+                before = {
+                    name: p.detach().clone()
+                    for name, p in model.backbones.named_parameters()
+                    if p.requires_grad
+                }
+                self.assertTrue(before)
+                trainer._run_epoch(batches, training=True)
+                self.assertTrue(model.backbones.training)
+                changed = [
+                    name for name, p in model.backbones.named_parameters()
+                    if name in before and not torch.equal(before[name], p)
+                ]
+                self.assertTrue(changed)
+
+                trainer._run_epoch(batches, training=False)
+                self.assertFalse(model.backbones.training)
+                # The original backbone checkpoint is never modified.
+                self.assertEqual(Path(imu_path).read_bytes(), imu_bytes)
+
+    def test_non_positive_backbone_lr_scale_is_rejected(self) -> None:
+        parents, build, trainer_class, _ = self._fine_tuning_cases()[0]
+        model = build(
+            _save_backbone(self.root / "imu.pt", *parents[0]),
+            _save_backbone(self.root / "mmg.pt", *parents[1]),
+        )
+        with self.assertRaises(ValueError):
+            trainer_class(model, {"lr": 1e-3, "backbone_lr_scale": 0, "device": "cpu"})
 
     def test_single_window_fusion_models_load_from_one_file(self) -> None:
         parents = (
