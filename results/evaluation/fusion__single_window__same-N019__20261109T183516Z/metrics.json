@@ -1,0 +1,366 @@
+{
+  "evaluated_at_utc": "2026-11-09T18:35:16.813926+00:00",
+  "input_mode": "single_window",
+  "model_target": "fusion",
+  "experiment_config": {
+    "same_volunteer_id": "019",
+    "train_volunteer_count": 5,
+    "test_volunteer_count": 5,
+    "total_budget_gb": 10.0,
+    "seed": 42,
+    "test_fraction": 0.1,
+    "just_states_ratio": 1.05,
+    "batch_size": 32,
+    "amputee_id": null,
+    "data_type": null,
+    "label_subset": null
+  },
+  "class_names": [
+    "sit",
+    "stand",
+    "walking",
+    "sit_to_stand",
+    "stand_to_sit",
+    "stairs_up",
+    "stairs_down"
+  ],
+  "test_volunteers": [
+    "N019"
+  ],
+  "models": {
+    "FusionCNN": {
+      "model_key": "fusion_cnn",
+      "run_id": "fusion_cnn__single_window__same-019__20261109T182504Z",
+      "checkpoint": "results/training/fusion_cnn__single_window__same-019__20261109T182504Z/fusion_cnn__single_window__same-019__20261109T182504Z.pt",
+      "checkpoint_sha256": "bb9125dcaa0462035aafda711e58ef5601a5be22db05031558ec6aeaaf87ad62",
+      "test_rows": 764,
+      "accuracy": 0.9541884816753927,
+      "macro_f1": 0.9491563369593836,
+      "balanced_accuracy": 0.9439134808853119,
+      "confusion_matrix_counts": [
+        [
+          80,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          279,
+          0,
+          0,
+          2,
+          0,
+          0
+        ],
+        [
+          0,
+          4,
+          75,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          1,
+          0,
+          79,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          0,
+          79,
+          0,
+          0
+        ],
+        [
+          0,
+          3,
+          5,
+          0,
+          0,
+          70,
+          2
+        ],
+        [
+          0,
+          7,
+          2,
+          2,
+          1,
+          1,
+          67
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          100.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.056338028169014,
+          98.2394366197183,
+          0.0,
+          0.0,
+          0.704225352112676,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          5.0,
+          93.75,
+          0.0,
+          0.0,
+          0.0,
+          1.25
+        ],
+        [
+          0.0,
+          1.25,
+          0.0,
+          98.75,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          1.25,
+          0.0,
+          0.0,
+          0.0,
+          98.75,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          3.75,
+          6.25,
+          0.0,
+          0.0,
+          87.5,
+          2.5
+        ],
+        [
+          0.0,
+          8.75,
+          2.5,
+          2.5,
+          1.25,
+          1.25,
+          83.75
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 76,
+          "correct": 74,
+          "accuracy": 0.9736842105263158
+        },
+        "50m": {
+          "n": 76,
+          "correct": 75,
+          "accuracy": 0.9868421052631579
+        },
+        "0": {
+          "n": 76,
+          "correct": 76,
+          "accuracy": 1.0
+        },
+        "50": {
+          "n": 76,
+          "correct": 74,
+          "accuracy": 0.9736842105263158
+        },
+        "100": {
+          "n": 76,
+          "correct": 70,
+          "accuracy": 0.9210526315789473
+        }
+      }
+    },
+    "FusionGRU": {
+      "model_key": "fusion_gru",
+      "run_id": "fusion_gru__single_window__same-019__20261109T183009Z",
+      "checkpoint": "results/training/fusion_gru__single_window__same-019__20261109T183009Z/fusion_gru__single_window__same-019__20261109T183009Z.pt",
+      "checkpoint_sha256": "80f18e63c4f29aebe08c7fc3ada391e462462d8b5d22c5fa27ccdb9c963148bc",
+      "test_rows": 764,
+      "accuracy": 0.9319371727748691,
+      "macro_f1": 0.9266484761628624,
+      "balanced_accuracy": 0.9109909456740443,
+      "confusion_matrix_counts": [
+        [
+          80,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          281,
+          0,
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          10,
+          67,
+          0,
+          0,
+          0,
+          3
+        ],
+        [
+          0,
+          1,
+          0,
+          78,
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          2,
+          0,
+          1,
+          76,
+          0,
+          0
+        ],
+        [
+          0,
+          5,
+          3,
+          0,
+          0,
+          68,
+          4
+        ],
+        [
+          1,
+          14,
+          2,
+          0,
+          0,
+          1,
+          62
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          100.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.352112676056338,
+          98.94366197183099,
+          0.0,
+          0.352112676056338,
+          0.352112676056338,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          12.5,
+          83.75,
+          0.0,
+          0.0,
+          0.0,
+          3.75
+        ],
+        [
+          0.0,
+          1.25,
+          0.0,
+          97.5,
+          1.25,
+          0.0,
+          0.0
+        ],
+        [
+          1.25,
+          2.5,
+          0.0,
+          1.25,
+          95.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          6.25,
+          3.75,
+          0.0,
+          0.0,
+          85.0,
+          5.0
+        ],
+        [
+          1.25,
+          17.5,
+          2.5,
+          0.0,
+          0.0,
+          1.25,
+          77.5
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 76,
+          "correct": 70,
+          "accuracy": 0.9210526315789473
+        },
+        "50m": {
+          "n": 76,
+          "correct": 75,
+          "accuracy": 0.9868421052631579
+        },
+        "0": {
+          "n": 76,
+          "correct": 76,
+          "accuracy": 1.0
+        },
+        "50": {
+          "n": 76,
+          "correct": 74,
+          "accuracy": 0.9736842105263158
+        },
+        "100": {
+          "n": 76,
+          "correct": 69,
+          "accuracy": 0.9078947368421053
+        }
+      }
+    }
+  }
+}

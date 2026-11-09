@@ -1,0 +1,24 @@
+{
+  "best_epoch": 39,
+  "best_params": {
+    "adam_beta1": 0.9720044826262805,
+    "adam_beta2": 0.9802868404822216,
+    "adam_lr": 0.004132765459466363,
+    "adam_wd": 0.000341676434183297,
+    "backbone_lr_scale": 0.03462120997293593,
+    "batch_size": 128,
+    "fc_dropout": 0.21590058116550723,
+    "fc_hidden": 128,
+    "gru_hidden": 256,
+    "lr_factor": 0.24925604710882868,
+    "lr_patience": 19,
+    "optimizer": "Adam"
+  },
+  "best_trial_number": 5,
+  "model_key": "fusion_gru",
+  "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+  "objective_value": 1.0,
+  "study_name": "fusion_gru__single_window__same-017__20261109T174644Z",
+  "validation_accuracy": 1.0,
+  "validation_macro_f1": 1.0
+}
