@@ -1,0 +1,1348 @@
+{
+  "evaluated_at_utc": "2026-11-03T16:26:51.304591+00:00",
+  "amputee_id": "A003",
+  "input_mode": "single_window",
+  "model_target": "fusion",
+  "data_settings": {
+    "total_budget_gb": 10.0,
+    "seed": 42,
+    "test_fraction": 0.1,
+    "just_states_ratio": 1.05,
+    "batch_size": 32
+  },
+  "tasks": {
+    "sit_vs_sit_to_stand": [
+      "sit",
+      "sit_to_stand"
+    ],
+    "sit_to_stand_vs_stand": [
+      "sit_to_stand",
+      "stand"
+    ],
+    "stand_to_sit_vs_sit": [
+      "stand_to_sit",
+      "sit"
+    ],
+    "stand_vs_walking": [
+      "stand",
+      "walking"
+    ],
+    "stand_walking_stand_to_sit": [
+      "stand",
+      "walking",
+      "stand_to_sit"
+    ]
+  },
+  "types": {
+    "type1": {
+      "output_dir": "results/evaluation/fusion__single_window__amputee-A003__binary__20261103T162642Z/type1",
+      "models": {
+        "FusionCNN": {
+          "model_key": "fusion_cnn_amputee",
+          "bundle": "checkpoints/best_fusion_cnn_amputee_A003_type1_binary.pt",
+          "tasks": {
+            "sit_vs_sit_to_stand": {
+              "classes": [
+                "sit",
+                "sit_to_stand"
+              ],
+              "run_id": "fusion_cnn_amputee-sit_vs_sit_to_stand__single_window__amputee-A003-type1__20261103T120654Z",
+              "checkpoint_sha256": "2a0958bacd52095e062f6bb37a6589ee73e39b291076eccd575c04e83cfd818b",
+              "test_rows": 652,
+              "accuracy": 0.9708588957055214,
+              "macro_f1": 0.9703788721112346,
+              "balanced_accuracy": 0.9705679730557257,
+              "confusion_matrix_counts": [
+                [
+                  358,
+                  10
+                ],
+                [
+                  9,
+                  275
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  97.28260869565217,
+                  2.717391304347826
+                ],
+                [
+                  3.1690140845070425,
+                  96.83098591549296
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 64,
+                  "correct": 62,
+                  "accuracy": 0.96875
+                },
+                "50m": {
+                  "n": 64,
+                  "correct": 63,
+                  "accuracy": 0.984375
+                },
+                "0": {
+                  "n": 64,
+                  "correct": 64,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 64,
+                  "correct": 63,
+                  "accuracy": 0.984375
+                },
+                "100": {
+                  "n": 64,
+                  "correct": 59,
+                  "accuracy": 0.921875
+                }
+              }
+            },
+            "sit_to_stand_vs_stand": {
+              "classes": [
+                "sit_to_stand",
+                "stand"
+              ],
+              "run_id": "fusion_cnn_amputee-sit_to_stand_vs_stand__single_window__amputee-A003-type1__20261103T121356Z",
+              "checkpoint_sha256": "9d66cebd95913b8b1fe124491a59fab8817191f80e5c6b524403383d1d8079e7",
+              "test_rows": 1512,
+              "accuracy": 0.9702380952380952,
+              "macro_f1": 0.9523133692875391,
+              "balanced_accuracy": 0.9627299628389228,
+              "confusion_matrix_counts": [
+                [
+                  270,
+                  14
+                ],
+                [
+                  31,
+                  1197
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  95.07042253521126,
+                  4.929577464788732
+                ],
+                [
+                  2.52442996742671,
+                  97.47557003257329
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 148,
+                  "correct": 130,
+                  "accuracy": 0.8783783783783784
+                },
+                "50m": {
+                  "n": 148,
+                  "correct": 146,
+                  "accuracy": 0.9864864864864865
+                },
+                "0": {
+                  "n": 148,
+                  "correct": 140,
+                  "accuracy": 0.9459459459459459
+                },
+                "50": {
+                  "n": 148,
+                  "correct": 148,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 148,
+                  "correct": 145,
+                  "accuracy": 0.9797297297297297
+                }
+              }
+            },
+            "stand_to_sit_vs_sit": {
+              "classes": [
+                "stand_to_sit",
+                "sit"
+              ],
+              "run_id": "fusion_cnn_amputee-stand_to_sit_vs_sit__single_window__amputee-A003-type1__20261103T122842Z",
+              "checkpoint_sha256": "1408af864ae6d99ac6831d7c3a19ebdad7bcb94b148e7244d55af44966fe8ef2",
+              "test_rows": 736,
+              "accuracy": 0.9456521739130435,
+              "macro_f1": 0.9456377226932964,
+              "balanced_accuracy": 0.9456521739130435,
+              "confusion_matrix_counts": [
+                [
+                  342,
+                  26
+                ],
+                [
+                  14,
+                  354
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  92.93478260869566,
+                  7.065217391304348
+                ],
+                [
+                  3.8043478260869565,
+                  96.19565217391305
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 72,
+                  "correct": 64,
+                  "accuracy": 0.8888888888888888
+                },
+                "50m": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                },
+                "0": {
+                  "n": 72,
+                  "correct": 65,
+                  "accuracy": 0.9027777777777778
+                },
+                "50": {
+                  "n": 72,
+                  "correct": 68,
+                  "accuracy": 0.9444444444444444
+                },
+                "100": {
+                  "n": 72,
+                  "correct": 68,
+                  "accuracy": 0.9444444444444444
+                }
+              }
+            },
+            "stand_vs_walking": {
+              "classes": [
+                "stand",
+                "walking"
+              ],
+              "run_id": "fusion_cnn_amputee-stand_vs_walking__single_window__amputee-A003-type1__20261103T123505Z",
+              "checkpoint_sha256": "d0ebc2950f2c66bebeb06b1edbc04a6777b2fb23459378495a13aba72ea348d9",
+              "test_rows": 1512,
+              "accuracy": 0.9642857142857143,
+              "macro_f1": 0.9416291339595934,
+              "balanced_accuracy": 0.942824700646878,
+              "confusion_matrix_counts": [
+                [
+                  1200,
+                  28
+                ],
+                [
+                  26,
+                  258
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  97.71986970684038,
+                  2.2801302931596092
+                ],
+                [
+                  9.154929577464788,
+                  90.84507042253522
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 148,
+                  "correct": 141,
+                  "accuracy": 0.9527027027027027
+                },
+                "50m": {
+                  "n": 148,
+                  "correct": 144,
+                  "accuracy": 0.972972972972973
+                },
+                "0": {
+                  "n": 148,
+                  "correct": 144,
+                  "accuracy": 0.972972972972973
+                },
+                "50": {
+                  "n": 148,
+                  "correct": 148,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 148,
+                  "correct": 138,
+                  "accuracy": 0.9324324324324325
+                }
+              }
+            },
+            "stand_walking_stand_to_sit": {
+              "classes": [
+                "stand",
+                "walking",
+                "stand_to_sit"
+              ],
+              "run_id": "fusion_cnn_amputee-stand_walking_stand_to_sit__single_window__amputee-A003-type1__20261103T131623Z",
+              "checkpoint_sha256": "6d7016d66468ac455db7101db7f0f5286eb0496c945d9aa22fd7ab97f0e6b0c7",
+              "test_rows": 1880,
+              "accuracy": 0.9537234042553191,
+              "macro_f1": 0.9413191363501922,
+              "balanced_accuracy": 0.9438474780135279,
+              "confusion_matrix_counts": [
+                [
+                  1183,
+                  29,
+                  16
+                ],
+                [
+                  19,
+                  262,
+                  3
+                ],
+                [
+                  20,
+                  0,
+                  348
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  96.33550488599349,
+                  2.3615635179153096,
+                  1.3029315960912051
+                ],
+                [
+                  6.690140845070423,
+                  92.25352112676056,
+                  1.056338028169014
+                ],
+                [
+                  5.434782608695652,
+                  0.0,
+                  94.56521739130434
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 184,
+                  "correct": 173,
+                  "accuracy": 0.9402173913043478
+                },
+                "50m": {
+                  "n": 184,
+                  "correct": 180,
+                  "accuracy": 0.9782608695652174
+                },
+                "0": {
+                  "n": 184,
+                  "correct": 180,
+                  "accuracy": 0.9782608695652174
+                },
+                "50": {
+                  "n": 184,
+                  "correct": 183,
+                  "accuracy": 0.9945652173913043
+                },
+                "100": {
+                  "n": 184,
+                  "correct": 167,
+                  "accuracy": 0.907608695652174
+                }
+              }
+            }
+          },
+          "overall": {
+            "tasks": 5,
+            "mean_accuracy": 0.9609516566795386,
+            "mean_balanced_accuracy": 0.9531244576936195,
+            "mean_macro_f1": 0.9502556468803712,
+            "pooled_rows": 6292,
+            "pooled_correct": 6047,
+            "pooled_accuracy": 0.9610616656071201
+          }
+        },
+        "FusionGRU": {
+          "model_key": "fusion_gru_amputee",
+          "bundle": "checkpoints/best_fusion_gru_amputee_A003_type1_binary.pt",
+          "tasks": {
+            "sit_vs_sit_to_stand": {
+              "classes": [
+                "sit",
+                "sit_to_stand"
+              ],
+              "run_id": "fusion_gru_amputee-sit_vs_sit_to_stand__single_window__amputee-A003-type1__20261103T133231Z",
+              "checkpoint_sha256": "c10b459148087a4d72a10b64f1ea421e4031b02472a798e99dbce39c289b5b4c",
+              "test_rows": 652,
+              "accuracy": 0.9846625766871165,
+              "macro_f1": 0.9844398835377786,
+              "balanced_accuracy": 0.9856093080220454,
+              "confusion_matrix_counts": [
+                [
+                  360,
+                  8
+                ],
+                [
+                  2,
+                  282
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  97.82608695652173,
+                  2.1739130434782608
+                ],
+                [
+                  0.704225352112676,
+                  99.29577464788733
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 64,
+                  "correct": 62,
+                  "accuracy": 0.96875
+                },
+                "50m": {
+                  "n": 64,
+                  "correct": 63,
+                  "accuracy": 0.984375
+                },
+                "0": {
+                  "n": 64,
+                  "correct": 64,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 64,
+                  "correct": 64,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 64,
+                  "correct": 61,
+                  "accuracy": 0.953125
+                }
+              }
+            },
+            "sit_to_stand_vs_stand": {
+              "classes": [
+                "sit_to_stand",
+                "stand"
+              ],
+              "run_id": "fusion_gru_amputee-sit_to_stand_vs_stand__single_window__amputee-A003-type1__20261103T133615Z",
+              "checkpoint_sha256": "398763b05fefcb7830c97435f09fefa6389a7169951299a15b92952cf499a158",
+              "test_rows": 1512,
+              "accuracy": 0.9662698412698413,
+              "macro_f1": 0.9455291013700372,
+              "balanced_accuracy": 0.9521665825572326,
+              "confusion_matrix_counts": [
+                [
+                  264,
+                  20
+                ],
+                [
+                  31,
+                  1197
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  92.95774647887323,
+                  7.042253521126761
+                ],
+                [
+                  2.52442996742671,
+                  97.47557003257329
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 148,
+                  "correct": 129,
+                  "accuracy": 0.8716216216216216
+                },
+                "50m": {
+                  "n": 148,
+                  "correct": 145,
+                  "accuracy": 0.9797297297297297
+                },
+                "0": {
+                  "n": 148,
+                  "correct": 139,
+                  "accuracy": 0.9391891891891891
+                },
+                "50": {
+                  "n": 148,
+                  "correct": 147,
+                  "accuracy": 0.9932432432432432
+                },
+                "100": {
+                  "n": 148,
+                  "correct": 145,
+                  "accuracy": 0.9797297297297297
+                }
+              }
+            },
+            "stand_to_sit_vs_sit": {
+              "classes": [
+                "stand_to_sit",
+                "sit"
+              ],
+              "run_id": "fusion_gru_amputee-stand_to_sit_vs_sit__single_window__amputee-A003-type1__20261103T135111Z",
+              "checkpoint_sha256": "14070e1e3a1c01e57f97efc63b50f0b84cfbfb4ab3db27f992e8af2581d70223",
+              "test_rows": 736,
+              "accuracy": 0.938858695652174,
+              "macro_f1": 0.9388332893174334,
+              "balanced_accuracy": 0.9388586956521738,
+              "confusion_matrix_counts": [
+                [
+                  353,
+                  15
+                ],
+                [
+                  30,
+                  338
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  95.92391304347827,
+                  4.076086956521739
+                ],
+                [
+                  8.152173913043478,
+                  91.84782608695652
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 72,
+                  "correct": 62,
+                  "accuracy": 0.8611111111111112
+                },
+                "50m": {
+                  "n": 72,
+                  "correct": 71,
+                  "accuracy": 0.9861111111111112
+                },
+                "0": {
+                  "n": 72,
+                  "correct": 69,
+                  "accuracy": 0.9583333333333334
+                },
+                "50": {
+                  "n": 72,
+                  "correct": 66,
+                  "accuracy": 0.9166666666666666
+                },
+                "100": {
+                  "n": 72,
+                  "correct": 67,
+                  "accuracy": 0.9305555555555556
+                }
+              }
+            },
+            "stand_vs_walking": {
+              "classes": [
+                "stand",
+                "walking"
+              ],
+              "run_id": "fusion_gru_amputee-stand_vs_walking__single_window__amputee-A003-type1__20261103T135505Z",
+              "checkpoint_sha256": "8b5a990787ad4cf4f45a5bae30f15ed3f9f3b1a5c78dea394abfdd2bcd553f0c",
+              "test_rows": 1512,
+              "accuracy": 0.9576719576719577,
+              "macro_f1": 0.9310053730934644,
+              "balanced_accuracy": 0.9333394503830803,
+              "confusion_matrix_counts": [
+                [
+                  1194,
+                  34
+                ],
+                [
+                  30,
+                  254
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  97.23127035830619,
+                  2.768729641693811
+                ],
+                [
+                  10.56338028169014,
+                  89.43661971830986
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 148,
+                  "correct": 140,
+                  "accuracy": 0.9459459459459459
+                },
+                "50m": {
+                  "n": 148,
+                  "correct": 144,
+                  "accuracy": 0.972972972972973
+                },
+                "0": {
+                  "n": 148,
+                  "correct": 144,
+                  "accuracy": 0.972972972972973
+                },
+                "50": {
+                  "n": 148,
+                  "correct": 148,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 148,
+                  "correct": 137,
+                  "accuracy": 0.9256756756756757
+                }
+              }
+            },
+            "stand_walking_stand_to_sit": {
+              "classes": [
+                "stand",
+                "walking",
+                "stand_to_sit"
+              ],
+              "run_id": "fusion_gru_amputee-stand_walking_stand_to_sit__single_window__amputee-A003-type1__20261103T140307Z",
+              "checkpoint_sha256": "d297fd05a3acfa0064fe3e40a0805d953deb5ced9b32cbabc9fb7a3c918dc97c",
+              "test_rows": 1880,
+              "accuracy": 0.9579787234042553,
+              "macro_f1": 0.9455762731001577,
+              "balanced_accuracy": 0.9518267372255057,
+              "confusion_matrix_counts": [
+                [
+                  1181,
+                  29,
+                  18
+                ],
+                [
+                  20,
+                  260,
+                  4
+                ],
+                [
+                  8,
+                  0,
+                  360
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  96.17263843648209,
+                  2.3615635179153096,
+                  1.4657980456026058
+                ],
+                [
+                  7.042253521126761,
+                  91.54929577464789,
+                  1.408450704225352
+                ],
+                [
+                  2.1739130434782608,
+                  0.0,
+                  97.82608695652173
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 184,
+                  "correct": 172,
+                  "accuracy": 0.9347826086956522
+                },
+                "50m": {
+                  "n": 184,
+                  "correct": 180,
+                  "accuracy": 0.9782608695652174
+                },
+                "0": {
+                  "n": 184,
+                  "correct": 180,
+                  "accuracy": 0.9782608695652174
+                },
+                "50": {
+                  "n": 184,
+                  "correct": 184,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 184,
+                  "correct": 170,
+                  "accuracy": 0.9239130434782609
+                }
+              }
+            }
+          },
+          "overall": {
+            "tasks": 5,
+            "mean_accuracy": 0.9610883589370689,
+            "mean_balanced_accuracy": 0.9523601547680076,
+            "mean_macro_f1": 0.9490767840837743,
+            "pooled_rows": 6292,
+            "pooled_correct": 6043,
+            "pooled_accuracy": 0.960425937698665
+          }
+        }
+      }
+    },
+    "type2": {
+      "output_dir": "results/evaluation/fusion__single_window__amputee-A003__binary__20261103T162642Z/type2",
+      "models": {
+        "FusionCNN": {
+          "model_key": "fusion_cnn_amputee",
+          "bundle": "checkpoints/best_fusion_cnn_amputee_A003_type2_binary.pt",
+          "tasks": {
+            "sit_vs_sit_to_stand": {
+              "classes": [
+                "sit",
+                "sit_to_stand"
+              ],
+              "run_id": "fusion_cnn_amputee-sit_vs_sit_to_stand__single_window__amputee-A003-type2__20261103T141343Z",
+              "checkpoint_sha256": "82cc9abc2935dbf4bc0f61047fc9dac8671f160e70800519f751057647db0511",
+              "test_rows": 736,
+              "accuracy": 0.9836956521739131,
+              "macro_f1": 0.9836926417477234,
+              "balanced_accuracy": 0.9836956521739131,
+              "confusion_matrix_counts": [
+                [
+                  357,
+                  11
+                ],
+                [
+                  1,
+                  367
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  97.01086956521739,
+                  2.989130434782609
+                ],
+                [
+                  0.2717391304347826,
+                  99.72826086956522
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                },
+                "50m": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                },
+                "0": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                }
+              }
+            },
+            "sit_to_stand_vs_stand": {
+              "classes": [
+                "sit_to_stand",
+                "stand"
+              ],
+              "run_id": "fusion_cnn_amputee-sit_to_stand_vs_stand__single_window__amputee-A003-type2__20261103T141738Z",
+              "checkpoint_sha256": "45cc24d5f3a3bf8b8b7489b40dffc26a213f70cb966240f7ff9af1bc09ae8d67",
+              "test_rows": 1556,
+              "accuracy": 0.9967866323907455,
+              "macro_f1": 0.9955552381632508,
+              "balanced_accuracy": 0.9960199824330259,
+              "confusion_matrix_counts": [
+                [
+                  366,
+                  2
+                ],
+                [
+                  3,
+                  1185
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  99.45652173913044,
+                  0.5434782608695652
+                ],
+                [
+                  0.25252525252525254,
+                  99.74747474747475
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 152,
+                  "correct": 149,
+                  "accuracy": 0.9802631578947368
+                },
+                "50m": {
+                  "n": 152,
+                  "correct": 152,
+                  "accuracy": 1.0
+                },
+                "0": {
+                  "n": 152,
+                  "correct": 152,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 152,
+                  "correct": 152,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 152,
+                  "correct": 151,
+                  "accuracy": 0.993421052631579
+                }
+              }
+            },
+            "stand_to_sit_vs_sit": {
+              "classes": [
+                "stand_to_sit",
+                "sit"
+              ],
+              "run_id": "fusion_cnn_amputee-stand_to_sit_vs_sit__single_window__amputee-A003-type2__20261103T143348Z",
+              "checkpoint_sha256": "7d93be43344754da3565058f4542d1723df2168a5351ee36897c871dcc3dec53",
+              "test_rows": 736,
+              "accuracy": 0.9741847826086957,
+              "macro_f1": 0.9741710025913961,
+              "balanced_accuracy": 0.9741847826086957,
+              "confusion_matrix_counts": [
+                [
+                  367,
+                  1
+                ],
+                [
+                  18,
+                  350
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  99.72826086956522,
+                  0.2717391304347826
+                ],
+                [
+                  4.891304347826087,
+                  95.1086956521739
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                },
+                "50m": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                },
+                "0": {
+                  "n": 72,
+                  "correct": 68,
+                  "accuracy": 0.9444444444444444
+                },
+                "50": {
+                  "n": 72,
+                  "correct": 68,
+                  "accuracy": 0.9444444444444444
+                },
+                "100": {
+                  "n": 72,
+                  "correct": 68,
+                  "accuracy": 0.9444444444444444
+                }
+              }
+            },
+            "stand_vs_walking": {
+              "classes": [
+                "stand",
+                "walking"
+              ],
+              "run_id": "fusion_cnn_amputee-stand_vs_walking__single_window__amputee-A003-type2__20261103T143932Z",
+              "checkpoint_sha256": "b2c857fe01cb59e0af6decad0a207bfce8c479bd6c37fafadfbaf678d445d38a",
+              "test_rows": 1432,
+              "accuracy": 0.9825418994413407,
+              "macro_f1": 0.9693729933108222,
+              "balanced_accuracy": 0.9731950654081801,
+              "confusion_matrix_counts": [
+                [
+                  1173,
+                  15
+                ],
+                [
+                  10,
+                  234
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  98.73737373737374,
+                  1.2626262626262625
+                ],
+                [
+                  4.098360655737705,
+                  95.90163934426229
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 140,
+                  "correct": 136,
+                  "accuracy": 0.9714285714285714
+                },
+                "50m": {
+                  "n": 140,
+                  "correct": 140,
+                  "accuracy": 1.0
+                },
+                "0": {
+                  "n": 140,
+                  "correct": 140,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 140,
+                  "correct": 140,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 140,
+                  "correct": 139,
+                  "accuracy": 0.9928571428571429
+                }
+              }
+            },
+            "stand_walking_stand_to_sit": {
+              "classes": [
+                "stand",
+                "walking",
+                "stand_to_sit"
+              ],
+              "run_id": "fusion_cnn_amputee-stand_walking_stand_to_sit__single_window__amputee-A003-type2__20261103T144956Z",
+              "checkpoint_sha256": "e6779dc2c5a3e3fa85c372a4566a4b52c019e3c6499467f5e402553e9f0a3205",
+              "test_rows": 1800,
+              "accuracy": 0.9805555555555555,
+              "macro_f1": 0.9750410855644125,
+              "balanced_accuracy": 0.971821645615896,
+              "confusion_matrix_counts": [
+                [
+                  1175,
+                  5,
+                  8
+                ],
+                [
+                  8,
+                  234,
+                  2
+                ],
+                [
+                  12,
+                  0,
+                  356
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  98.9057239057239,
+                  0.4208754208754209,
+                  0.6734006734006734
+                ],
+                [
+                  3.278688524590164,
+                  95.90163934426229,
+                  0.819672131147541
+                ],
+                [
+                  3.260869565217391,
+                  0.0,
+                  96.73913043478261
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 176,
+                  "correct": 168,
+                  "accuracy": 0.9545454545454546
+                },
+                "50m": {
+                  "n": 176,
+                  "correct": 175,
+                  "accuracy": 0.9943181818181818
+                },
+                "0": {
+                  "n": 176,
+                  "correct": 176,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 176,
+                  "correct": 176,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 176,
+                  "correct": 174,
+                  "accuracy": 0.9886363636363636
+                }
+              }
+            }
+          },
+          "overall": {
+            "tasks": 5,
+            "mean_accuracy": 0.9835529044340501,
+            "mean_balanced_accuracy": 0.9797834256479423,
+            "mean_macro_f1": 0.979566592275521,
+            "pooled_rows": 6260,
+            "pooled_correct": 6164,
+            "pooled_accuracy": 0.984664536741214
+          }
+        },
+        "FusionGRU": {
+          "model_key": "fusion_gru_amputee",
+          "bundle": "checkpoints/best_fusion_gru_amputee_A003_type2_binary.pt",
+          "tasks": {
+            "sit_vs_sit_to_stand": {
+              "classes": [
+                "sit",
+                "sit_to_stand"
+              ],
+              "run_id": "fusion_gru_amputee-sit_vs_sit_to_stand__single_window__amputee-A003-type2__20261103T151735Z",
+              "checkpoint_sha256": "3be25236c23eab7cf3200197ca1cd5f6a44c592ae3d3a5e63cff494b7ccb9f60",
+              "test_rows": 736,
+              "accuracy": 0.9755434782608695,
+              "macro_f1": 0.9755389626215851,
+              "balanced_accuracy": 0.9755434782608696,
+              "confusion_matrix_counts": [
+                [
+                  364,
+                  4
+                ],
+                [
+                  14,
+                  354
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  98.91304347826087,
+                  1.0869565217391304
+                ],
+                [
+                  3.8043478260869565,
+                  96.19565217391305
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 72,
+                  "correct": 68,
+                  "accuracy": 0.9444444444444444
+                },
+                "50m": {
+                  "n": 72,
+                  "correct": 69,
+                  "accuracy": 0.9583333333333334
+                },
+                "0": {
+                  "n": 72,
+                  "correct": 69,
+                  "accuracy": 0.9583333333333334
+                },
+                "50": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 72,
+                  "correct": 72,
+                  "accuracy": 1.0
+                }
+              }
+            },
+            "sit_to_stand_vs_stand": {
+              "classes": [
+                "sit_to_stand",
+                "stand"
+              ],
+              "run_id": "fusion_gru_amputee-sit_to_stand_vs_stand__single_window__amputee-A003-type2__20261103T152738Z",
+              "checkpoint_sha256": "0a77921ebdd4469df966cd9a6fef4f387026056e829fc51871be349d120add9a",
+              "test_rows": 1556,
+              "accuracy": 0.9955012853470437,
+              "macro_f1": 0.9937773334285511,
+              "balanced_accuracy": 0.9942404113599765,
+              "confusion_matrix_counts": [
+                [
+                  365,
+                  3
+                ],
+                [
+                  4,
+                  1184
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  99.18478260869566,
+                  0.8152173913043478
+                ],
+                [
+                  0.3367003367003367,
+                  99.66329966329967
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 152,
+                  "correct": 149,
+                  "accuracy": 0.9802631578947368
+                },
+                "50m": {
+                  "n": 152,
+                  "correct": 151,
+                  "accuracy": 0.993421052631579
+                },
+                "0": {
+                  "n": 152,
+                  "correct": 152,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 152,
+                  "correct": 152,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 152,
+                  "correct": 151,
+                  "accuracy": 0.993421052631579
+                }
+              }
+            },
+            "stand_to_sit_vs_sit": {
+              "classes": [
+                "stand_to_sit",
+                "sit"
+              ],
+              "run_id": "fusion_gru_amputee-stand_to_sit_vs_sit__single_window__amputee-A003-type2__20261103T154108Z",
+              "checkpoint_sha256": "30add349bbaa7a355029d1b79dca1013c4af186f04451ed6ce56dd9c670e2560",
+              "test_rows": 736,
+              "accuracy": 0.9728260869565217,
+              "macro_f1": 0.9728260869565217,
+              "balanced_accuracy": 0.9728260869565217,
+              "confusion_matrix_counts": [
+                [
+                  358,
+                  10
+                ],
+                [
+                  10,
+                  358
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  97.28260869565217,
+                  2.717391304347826
+                ],
+                [
+                  2.717391304347826,
+                  97.28260869565217
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 72,
+                  "correct": 71,
+                  "accuracy": 0.9861111111111112
+                },
+                "50m": {
+                  "n": 72,
+                  "correct": 71,
+                  "accuracy": 0.9861111111111112
+                },
+                "0": {
+                  "n": 72,
+                  "correct": 69,
+                  "accuracy": 0.9583333333333334
+                },
+                "50": {
+                  "n": 72,
+                  "correct": 69,
+                  "accuracy": 0.9583333333333334
+                },
+                "100": {
+                  "n": 72,
+                  "correct": 67,
+                  "accuracy": 0.9305555555555556
+                }
+              }
+            },
+            "stand_vs_walking": {
+              "classes": [
+                "stand",
+                "walking"
+              ],
+              "run_id": "fusion_gru_amputee-stand_vs_walking__single_window__amputee-A003-type2__20261103T155149Z",
+              "checkpoint_sha256": "e2b961378c7345f1b7917845659ff50a2aea82014e4989dd4dbf58ac8db69507",
+              "test_rows": 1432,
+              "accuracy": 0.9608938547486033,
+              "macro_f1": 0.9332033918070202,
+              "balanced_accuracy": 0.9487497930120881,
+              "confusion_matrix_counts": [
+                [
+                  1149,
+                  39
+                ],
+                [
+                  17,
+                  227
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  96.71717171717172,
+                  3.282828282828283
+                ],
+                [
+                  6.967213114754099,
+                  93.0327868852459
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 140,
+                  "correct": 133,
+                  "accuracy": 0.95
+                },
+                "50m": {
+                  "n": 140,
+                  "correct": 135,
+                  "accuracy": 0.9642857142857143
+                },
+                "0": {
+                  "n": 140,
+                  "correct": 140,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 140,
+                  "correct": 140,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 140,
+                  "correct": 134,
+                  "accuracy": 0.9571428571428572
+                }
+              }
+            },
+            "stand_walking_stand_to_sit": {
+              "classes": [
+                "stand",
+                "walking",
+                "stand_to_sit"
+              ],
+              "run_id": "fusion_gru_amputee-stand_walking_stand_to_sit__single_window__amputee-A003-type2__20261103T161011Z",
+              "checkpoint_sha256": "ea105a3bff532785abed1b4dd43c36984ca170d1087703ef9b17b3f70c073bf9",
+              "test_rows": 1800,
+              "accuracy": 0.9755555555555555,
+              "macro_f1": 0.9700720656279995,
+              "balanced_accuracy": 0.9703819296953058,
+              "confusion_matrix_counts": [
+                [
+                  1165,
+                  4,
+                  19
+                ],
+                [
+                  6,
+                  235,
+                  3
+                ],
+                [
+                  12,
+                  0,
+                  356
+                ]
+              ],
+              "confusion_matrix_row_percent": [
+                [
+                  98.06397306397307,
+                  0.3367003367003367,
+                  1.5993265993265993
+                ],
+                [
+                  2.459016393442623,
+                  96.31147540983606,
+                  1.2295081967213115
+                ],
+                [
+                  3.260869565217391,
+                  0.0,
+                  96.73913043478261
+                ]
+              ],
+              "transition_accuracy": {
+                "100m": {
+                  "n": 176,
+                  "correct": 172,
+                  "accuracy": 0.9772727272727273
+                },
+                "50m": {
+                  "n": 176,
+                  "correct": 176,
+                  "accuracy": 1.0
+                },
+                "0": {
+                  "n": 176,
+                  "correct": 176,
+                  "accuracy": 1.0
+                },
+                "50": {
+                  "n": 176,
+                  "correct": 176,
+                  "accuracy": 1.0
+                },
+                "100": {
+                  "n": 176,
+                  "correct": 169,
+                  "accuracy": 0.9602272727272727
+                }
+              }
+            }
+          },
+          "overall": {
+            "tasks": 5,
+            "mean_accuracy": 0.9760640521737189,
+            "mean_balanced_accuracy": 0.9723483398569523,
+            "mean_macro_f1": 0.9690835680883356,
+            "pooled_rows": 6260,
+            "pooled_correct": 6115,
+            "pooled_accuracy": 0.9768370607028753
+          }
+        }
+      }
+    }
+  }
+}

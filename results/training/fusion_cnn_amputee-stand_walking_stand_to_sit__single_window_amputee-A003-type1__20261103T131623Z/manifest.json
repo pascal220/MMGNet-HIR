@@ -1,0 +1,430 @@
+{
+  "artifacts": {
+    "best_trial_json": "best_trial.json",
+    "checkpoint": "fusion_cnn_amputee-stand_walking_stand_to_sit__single_window__amputee-A003-type1__20261103T131623Z.pt",
+    "checkpoint_alias_saved_at_utc": "2026-11-03T13:32:31.510218+00:00",
+    "checkpoint_aliases": [],
+    "checkpoint_sha256": "6d7016d66468ac455db7101db7f0f5286eb0496c945d9aa22fd7ab97f0e6b0c7",
+    "plots": {
+      "generated": [
+        "plots/optimization_history.html",
+        "plots/parameter_importances.html",
+        "plots/parallel_coordinate.html",
+        "plots/slice.html"
+      ],
+      "skipped": {}
+    },
+    "study_journal": "study.journal",
+    "trials_csv": "trials.csv"
+  },
+  "completed_at_utc": "2026-11-03T13:32:31.510249+00:00",
+  "data": {
+    "class_distribution": {
+      "0": 10168,
+      "1": 2416,
+      "2": 2952
+    },
+    "development_rows": 15536,
+    "development_volunteers": [
+      "A003"
+    ],
+    "experiment_config": {
+      "amputee_id": "A003",
+      "batch_size": 32,
+      "data_type": "type1",
+      "just_states_ratio": 1.05,
+      "label_subset": [
+        1,
+        2,
+        4
+      ],
+      "same_volunteer_id": null,
+      "seed": 42,
+      "test_fraction": 0.1,
+      "test_volunteer_count": 2,
+      "total_budget_gb": 10.0,
+      "train_volunteer_count": 8
+    },
+    "group_columns": [
+      "imu_source_file",
+      "source_sample_index"
+    ],
+    "metadata_fingerprint_sha256": "c81f68325cde8daa21c50cc4a97d2cff5d017861beea185045b499f2a1dd290a",
+    "search_train_fingerprint_sha256": "188240e98c6d83c8d82d25b8adb77a709a187af8235ff0d01dcea51823b8b943",
+    "search_train_rows": 13980,
+    "test_set_accessed": false,
+    "validation_fingerprint_sha256": "68c5091c7d727a903b9d57714bf33d47b2029a702fd66b2d2444a6ac6595ddfc",
+    "validation_fraction": 0.1,
+    "validation_protocol": "single grouped stratified holdout",
+    "validation_rows": 1556
+  },
+  "duration_seconds": 967.9928939212114,
+  "environment": {
+    "compute_device": {
+      "cuda_available": true,
+      "cuda_device_count": 2,
+      "cuda_version": "13.0",
+      "cudnn_version": 92400,
+      "device_name": "NVIDIA GeForce RTX 4090",
+      "index": 0,
+      "requested": "auto",
+      "resolved": "cuda",
+      "torch": "2.14.0+cu130",
+      "type": "cuda"
+    },
+    "cuda_available": true,
+    "cuda_version": "13.0",
+    "git": {
+      "commit": "23ba92aee78ecbb810faf1e8315e4e19f6d71b1a",
+      "dirty": true
+    },
+    "numpy": "2.4.6",
+    "optuna": "5.0.0",
+    "pandas": "3.0.5",
+    "platform": "Linux-6.8.0-142-generic-x86_64-with-glibc2.39",
+    "plotly": "7.1.0",
+    "python": "3.11.16 (main, Aug 27 2026, 14:44:21) [GCC 14.3.0]",
+    "scikit_learn": "1.9.1",
+    "seed": 42,
+    "torch": "2.14.0+cu130"
+  },
+  "final_refit": {
+    "actual_epochs": 100,
+    "class_weights": [
+      0.5093102543928665,
+      2.143487858719647,
+      1.7542908762420957
+    ],
+    "early_stopping": {
+      "best_epoch": 100,
+      "best_value": 0.02005171504573768,
+      "enabled": true,
+      "epochs_without_improvement": 0,
+      "min_delta": 0.0001,
+      "monitor": "train_loss",
+      "patience": 10,
+      "restored_best_weights": true,
+      "stopped_epoch": null
+    },
+    "epochs": 100,
+    "final_training_accuracy": 0.986096807415036,
+    "history_path": "training_history.json",
+    "policy": "all non-test development data for up to configured final epoch count with train-loss early stopping",
+    "training_params": {
+      "batch_size": 64,
+      "class_weights": [
+        0.5093102543928665,
+        2.143487858719647,
+        1.7542908762420957
+      ],
+      "device": "cuda",
+      "early_stopping_min_delta": 0.0001,
+      "early_stopping_monitor": "train_loss",
+      "early_stopping_patience": 10,
+      "epochs": 100,
+      "lr": 0.022447687569749585,
+      "lr_factor": 0.10863804698469628,
+      "lr_min": 1e-06,
+      "lr_patience": 5,
+      "momentum": 0.7889563636170148,
+      "optimizer": "SGD",
+      "restore_best_weights": true,
+      "weight_decay": 2.2960851699212818e-05
+    }
+  },
+  "model": {
+    "class": "FusionCNNAmputee",
+    "config": {
+      "backbone_configs": {
+        "imu": {
+          "block_filters": [
+            16,
+            32,
+            64
+          ],
+          "in_channels": 6,
+          "kernel_pairs": [
+            [
+              5,
+              7
+            ],
+            [
+              3,
+              5
+            ],
+            [
+              5,
+              7
+            ]
+          ]
+        },
+        "mmg": {
+          "block_filters": [
+            32,
+            16,
+            128
+          ],
+          "dropout_rates": [
+            0.016194700362741857,
+            0.015195032454968053,
+            0.04310385606752014
+          ],
+          "in_channels": 5,
+          "kernel_sizes": [
+            5,
+            3,
+            5
+          ],
+          "strides": [
+            3,
+            1,
+            1
+          ]
+        }
+      },
+      "dropout": 0.15598656718743314,
+      "fc_hidden": 512,
+      "feature_dim": 256,
+      "model_type": "FusionCNNAmputee",
+      "num_classes": 3
+    },
+    "input_mode": "single_window",
+    "input_shapes": [
+      [
+        6,
+        125
+      ],
+      [
+        5,
+        40,
+        125
+      ]
+    ],
+    "key": "fusion_cnn_amputee-stand_walking_stand_to_sit",
+    "label_mapping": {
+      "0": "stand",
+      "1": "walking",
+      "2": "stand_to_sit"
+    },
+    "model_target": "fusion",
+    "num_classes": 3,
+    "parent_checkpoints": [],
+    "total_parameters": 278403,
+    "trainable_parameters": 278403
+  },
+  "optimization": {
+    "completed_trials_total": 48,
+    "direction": "maximize",
+    "early_stop_min_delta": 0.001,
+    "early_stop_patience": 20,
+    "objective": "0.5 * validation_accuracy + 0.5 * validation_macro_f1",
+    "pruner": "MedianPruner(n_startup_trials=5,n_warmup_steps=10,interval_steps=1)",
+    "raw_best_params": {
+      "batch_size": 64,
+      "dropout": 0.15598656718743314,
+      "fc_hidden": 512,
+      "imu_block_0_filters": 16,
+      "imu_block_0_kernel_pair": "(5, 7)",
+      "imu_block_1_filters": 32,
+      "imu_block_1_kernel_pair": "(3, 5)",
+      "imu_block_2_filters": 64,
+      "imu_block_2_kernel_pair": "(5, 7)",
+      "imu_n_blocks": 3,
+      "lr_factor": 0.10863804698469628,
+      "lr_patience": 5,
+      "mmg_block_0_dropout": 0.016194700362741857,
+      "mmg_block_0_filters": 32,
+      "mmg_block_0_kernel": 5,
+      "mmg_block_0_stride": 3,
+      "mmg_block_1_dropout": 0.015195032454968053,
+      "mmg_block_1_filters": 16,
+      "mmg_block_1_kernel": 3,
+      "mmg_block_1_stride": 1,
+      "mmg_block_2_dropout": 0.04310385606752014,
+      "mmg_block_2_filters": 128,
+      "mmg_block_2_kernel": 5,
+      "mmg_block_2_stride": 1,
+      "mmg_n_blocks": 3,
+      "optimizer": "SGD",
+      "sgd_lr": 0.022447687569749585,
+      "sgd_momentum": 0.7889563636170148,
+      "sgd_wd": 2.2960851699212818e-05
+    },
+    "requested_additional_trials": 100,
+    "sampler": "TPESampler(seed=42)",
+    "search_class_weights": [
+      0.5094009619588981,
+      2.141544117647059,
+      1.7545180722891565
+    ],
+    "search_space": {
+      "adam_beta1": [
+        0.85,
+        0.99
+      ],
+      "adam_beta2": [
+        0.9,
+        0.9999
+      ],
+      "adam_lr": [
+        0.0001,
+        0.01
+      ],
+      "adam_wd": [
+        1e-06,
+        0.01
+      ],
+      "batch_size": [
+        64,
+        128,
+        200
+      ],
+      "dropout": [
+        0.1,
+        0.5
+      ],
+      "epochs": 50,
+      "fc_hidden": [
+        64,
+        128,
+        256,
+        512
+      ],
+      "imu_filters": [
+        8,
+        16,
+        32,
+        64
+      ],
+      "imu_kernel_pairs": [
+        [
+          3,
+          5
+        ],
+        [
+          3,
+          7
+        ],
+        [
+          5,
+          7
+        ]
+      ],
+      "imu_n_blocks": [
+        1,
+        3
+      ],
+      "lr_factor": [
+        0.1,
+        0.9
+      ],
+      "lr_min": 1e-06,
+      "lr_patience": [
+        5,
+        20
+      ],
+      "mmg_dropout_rates": [
+        0.01,
+        0.05
+      ],
+      "mmg_filters": [
+        [
+          8,
+          16,
+          32
+        ],
+        [
+          16,
+          32,
+          64
+        ],
+        [
+          32,
+          64,
+          128
+        ],
+        [
+          64,
+          128,
+          256
+        ],
+        [
+          128,
+          256,
+          512
+        ]
+      ],
+      "mmg_kernel_sizes": [
+        [
+          7,
+          5
+        ],
+        [
+          7,
+          5,
+          3
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          3
+        ]
+      ],
+      "mmg_n_blocks": [
+        3,
+        5
+      ],
+      "mmg_strides": [
+        [
+          3
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          1
+        ]
+      ],
+      "sgd_lr": [
+        0.0001,
+        0.1
+      ],
+      "sgd_momentum": [
+        0.7,
+        0.99
+      ],
+      "sgd_wd": [
+        1e-06,
+        0.01
+      ]
+    },
+    "selection": {
+      "best_epoch": 45,
+      "best_trial_number": 27,
+      "objective_value": 0.9437305783869178,
+      "validation_accuracy": 0.9498714652956298,
+      "validation_macro_f1": 0.9375896914782057
+    },
+    "study_name": "fusion_cnn_amputee-stand_walking_stand_to_sit__single_window__amputee-A003-type1__20261103T131623Z",
+    "timeout_seconds": null
+  },
+  "run_id": "fusion_cnn_amputee-stand_walking_stand_to_sit__single_window__amputee-A003-type1__20261103T131623Z",
+  "schema_version": 1,
+  "started_at_utc": "2026-11-03T13:16:23.517351+00:00",
+  "status": "completed"
+}

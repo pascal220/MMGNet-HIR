@@ -1,0 +1,343 @@
+{
+  "evaluated_at_utc": "2026-11-03T16:26:51.139401+00:00",
+  "input_mode": "single_window",
+  "experiment_config": {
+    "same_volunteer_id": null,
+    "train_volunteer_count": 8,
+    "test_volunteer_count": 2,
+    "total_budget_gb": 10.0,
+    "seed": 42,
+    "test_fraction": 0.1,
+    "just_states_ratio": 1.05,
+    "batch_size": 32,
+    "amputee_id": "A003",
+    "data_type": "type2",
+    "label_subset": null
+  },
+  "test_volunteers": [
+    "A003"
+  ],
+  "model_key": "fusion_gru_amputee",
+  "bundle": "checkpoints/best_fusion_gru_amputee_A003_type2_binary.pt",
+  "tasks": {
+    "sit_vs_sit_to_stand": {
+      "classes": [
+        "sit",
+        "sit_to_stand"
+      ],
+      "run_id": "fusion_gru_amputee-sit_vs_sit_to_stand__single_window__amputee-A003-type2__20261103T151735Z",
+      "checkpoint_sha256": "3be25236c23eab7cf3200197ca1cd5f6a44c592ae3d3a5e63cff494b7ccb9f60",
+      "test_rows": 736,
+      "accuracy": 0.9755434782608695,
+      "macro_f1": 0.9755389626215851,
+      "balanced_accuracy": 0.9755434782608696,
+      "confusion_matrix_counts": [
+        [
+          364,
+          4
+        ],
+        [
+          14,
+          354
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          98.91304347826087,
+          1.0869565217391304
+        ],
+        [
+          3.8043478260869565,
+          96.19565217391305
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 72,
+          "correct": 68,
+          "accuracy": 0.9444444444444444
+        },
+        "50m": {
+          "n": 72,
+          "correct": 69,
+          "accuracy": 0.9583333333333334
+        },
+        "0": {
+          "n": 72,
+          "correct": 69,
+          "accuracy": 0.9583333333333334
+        },
+        "50": {
+          "n": 72,
+          "correct": 72,
+          "accuracy": 1.0
+        },
+        "100": {
+          "n": 72,
+          "correct": 72,
+          "accuracy": 1.0
+        }
+      }
+    },
+    "sit_to_stand_vs_stand": {
+      "classes": [
+        "sit_to_stand",
+        "stand"
+      ],
+      "run_id": "fusion_gru_amputee-sit_to_stand_vs_stand__single_window__amputee-A003-type2__20261103T152738Z",
+      "checkpoint_sha256": "0a77921ebdd4469df966cd9a6fef4f387026056e829fc51871be349d120add9a",
+      "test_rows": 1556,
+      "accuracy": 0.9955012853470437,
+      "macro_f1": 0.9937773334285511,
+      "balanced_accuracy": 0.9942404113599765,
+      "confusion_matrix_counts": [
+        [
+          365,
+          3
+        ],
+        [
+          4,
+          1184
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          99.18478260869566,
+          0.8152173913043478
+        ],
+        [
+          0.3367003367003367,
+          99.66329966329967
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 152,
+          "correct": 149,
+          "accuracy": 0.9802631578947368
+        },
+        "50m": {
+          "n": 152,
+          "correct": 151,
+          "accuracy": 0.993421052631579
+        },
+        "0": {
+          "n": 152,
+          "correct": 152,
+          "accuracy": 1.0
+        },
+        "50": {
+          "n": 152,
+          "correct": 152,
+          "accuracy": 1.0
+        },
+        "100": {
+          "n": 152,
+          "correct": 151,
+          "accuracy": 0.993421052631579
+        }
+      }
+    },
+    "stand_to_sit_vs_sit": {
+      "classes": [
+        "stand_to_sit",
+        "sit"
+      ],
+      "run_id": "fusion_gru_amputee-stand_to_sit_vs_sit__single_window__amputee-A003-type2__20261103T154108Z",
+      "checkpoint_sha256": "30add349bbaa7a355029d1b79dca1013c4af186f04451ed6ce56dd9c670e2560",
+      "test_rows": 736,
+      "accuracy": 0.9728260869565217,
+      "macro_f1": 0.9728260869565217,
+      "balanced_accuracy": 0.9728260869565217,
+      "confusion_matrix_counts": [
+        [
+          358,
+          10
+        ],
+        [
+          10,
+          358
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          97.28260869565217,
+          2.717391304347826
+        ],
+        [
+          2.717391304347826,
+          97.28260869565217
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 72,
+          "correct": 71,
+          "accuracy": 0.9861111111111112
+        },
+        "50m": {
+          "n": 72,
+          "correct": 71,
+          "accuracy": 0.9861111111111112
+        },
+        "0": {
+          "n": 72,
+          "correct": 69,
+          "accuracy": 0.9583333333333334
+        },
+        "50": {
+          "n": 72,
+          "correct": 69,
+          "accuracy": 0.9583333333333334
+        },
+        "100": {
+          "n": 72,
+          "correct": 67,
+          "accuracy": 0.9305555555555556
+        }
+      }
+    },
+    "stand_vs_walking": {
+      "classes": [
+        "stand",
+        "walking"
+      ],
+      "run_id": "fusion_gru_amputee-stand_vs_walking__single_window__amputee-A003-type2__20261103T155149Z",
+      "checkpoint_sha256": "e2b961378c7345f1b7917845659ff50a2aea82014e4989dd4dbf58ac8db69507",
+      "test_rows": 1432,
+      "accuracy": 0.9608938547486033,
+      "macro_f1": 0.9332033918070202,
+      "balanced_accuracy": 0.9487497930120881,
+      "confusion_matrix_counts": [
+        [
+          1149,
+          39
+        ],
+        [
+          17,
+          227
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          96.71717171717172,
+          3.282828282828283
+        ],
+        [
+          6.967213114754099,
+          93.0327868852459
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 140,
+          "correct": 133,
+          "accuracy": 0.95
+        },
+        "50m": {
+          "n": 140,
+          "correct": 135,
+          "accuracy": 0.9642857142857143
+        },
+        "0": {
+          "n": 140,
+          "correct": 140,
+          "accuracy": 1.0
+        },
+        "50": {
+          "n": 140,
+          "correct": 140,
+          "accuracy": 1.0
+        },
+        "100": {
+          "n": 140,
+          "correct": 134,
+          "accuracy": 0.9571428571428572
+        }
+      }
+    },
+    "stand_walking_stand_to_sit": {
+      "classes": [
+        "stand",
+        "walking",
+        "stand_to_sit"
+      ],
+      "run_id": "fusion_gru_amputee-stand_walking_stand_to_sit__single_window__amputee-A003-type2__20261103T161011Z",
+      "checkpoint_sha256": "ea105a3bff532785abed1b4dd43c36984ca170d1087703ef9b17b3f70c073bf9",
+      "test_rows": 1800,
+      "accuracy": 0.9755555555555555,
+      "macro_f1": 0.9700720656279995,
+      "balanced_accuracy": 0.9703819296953058,
+      "confusion_matrix_counts": [
+        [
+          1165,
+          4,
+          19
+        ],
+        [
+          6,
+          235,
+          3
+        ],
+        [
+          12,
+          0,
+          356
+        ]
+      ],
+      "confusion_matrix_row_percent": [
+        [
+          98.06397306397307,
+          0.3367003367003367,
+          1.5993265993265993
+        ],
+        [
+          2.459016393442623,
+          96.31147540983606,
+          1.2295081967213115
+        ],
+        [
+          3.260869565217391,
+          0.0,
+          96.73913043478261
+        ]
+      ],
+      "transition_accuracy": {
+        "100m": {
+          "n": 176,
+          "correct": 172,
+          "accuracy": 0.9772727272727273
+        },
+        "50m": {
+          "n": 176,
+          "correct": 176,
+          "accuracy": 1.0
+        },
+        "0": {
+          "n": 176,
+          "correct": 176,
+          "accuracy": 1.0
+        },
+        "50": {
+          "n": 176,
+          "correct": 176,
+          "accuracy": 1.0
+        },
+        "100": {
+          "n": 176,
+          "correct": 169,
+          "accuracy": 0.9602272727272727
+        }
+      }
+    }
+  },
+  "overall": {
+    "tasks": 5,
+    "mean_accuracy": 0.9760640521737189,
+    "mean_balanced_accuracy": 0.9723483398569523,
+    "mean_macro_f1": 0.9690835680883356,
+    "pooled_rows": 6260,
+    "pooled_correct": 6115,
+    "pooled_accuracy": 0.9768370607028753
+  }
+}
